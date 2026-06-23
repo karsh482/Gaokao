@@ -47,10 +47,16 @@ cp .env.example .env
 默认镜像使用 `pgvector/pgvector:pg16`，因为核心建表脚本需要 `vector` 扩展。不要直接换成
 普通 `postgres` 镜像，除非已经确认镜像内安装了 pgvector。
 
-启动数据库：
+如果只需要启动数据库：
 
 ```bash
 docker compose up -d gaokao-postgres
+```
+
+如果希望同时启动数据库、API 和 Web 查询台，请使用根目录 README 中的一键启动命令：
+
+```bash
+docker compose up --build
 ```
 
 首次创建 `gaokao-postgres-data` 数据卷时，Docker 会自动执行：
@@ -62,9 +68,10 @@ packages/schema/004_seed_master_data.sh
 packages/schema/003_seed_staging_data.sh
 ```
 
-因此新用户默认只需要执行 `docker compose up -d gaokao-postgres`，即可完成核心表建表、
-staging 表建表、`data/processed/master/` 主数据导入和 `data/processed/*/*/`
-下完整招生事实数据集的自动导入。容器内实际执行顺序由 `docker-compose.yml`
+因此新用户默认执行 `docker compose up --build` 即可拉起完整应用；如果只调试数据库，
+执行 `docker compose up -d gaokao-postgres` 即可完成核心表建表、staging 表建表、
+`data/processed/master/` 主数据导入和 `data/processed/*/*/`
+下完整招生事实数据集的自动导入。数据库容器内实际执行顺序由 `docker-compose.yml`
 挂载到 `/docker-entrypoint-initdb.d/` 的文件名决定：主数据先导入，staging 数据后导入。
 
 默认本地连接串：

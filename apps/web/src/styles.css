@@ -78,8 +78,7 @@ button {
 }
 
 .modeNav button,
-.queryForm button,
-.examples button {
+.queryForm button {
   border: 1px solid transparent;
   border-radius: 8px;
 }
@@ -206,22 +205,6 @@ button {
 .queryForm button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
-}
-
-.examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.examples button {
-  padding: 7px 10px;
-  color: #2b3a47;
-  background: #e9eef3;
-}
-
-.examples button:hover {
-  background: #dce5ee;
 }
 
 .resultStack {

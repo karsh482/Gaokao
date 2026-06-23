@@ -20,19 +20,6 @@ import "./styles.css";
 
 type Mode = "admission" | "policy";
 
-const admissionExamples = [
-  "贵州物理类 9500名，能上哪些大学？",
-  "贵州物理类 位次10000 能不能上贵州大学？",
-  "贵州物理类 580分，可以报哪些学校？",
-  "贵州历史类 12000名，有哪些稳一点的学校？",
-];
-
-const policyExamples = [
-  "北京大学基础医学有哪些二级学科研究方向？",
-  "北京大学本科招生章程里对录取规则怎么说明？",
-  "北京大学招生简章里元培学院有什么特点？",
-];
-
 function App() {
   const [mode, setMode] = useState<Mode>("admission");
   const [apiKey, setApiKey] = useState(localStorage.getItem("gaokaoApiKey") ?? "");
@@ -98,7 +85,7 @@ function App() {
 }
 
 function AdmissionPanel({ apiKey }: { apiKey: string }) {
-  const [question, setQuestion] = useState(admissionExamples[0]);
+  const [question, setQuestion] = useState("");
   const [examProvince, setExamProvince] = useState("贵州");
   const [planYear, setPlanYear] = useState(2025);
   const [result, setResult] = useState<QueryResponse | null>(null);
@@ -130,10 +117,7 @@ function AdmissionPanel({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="page">
-      <QueryHeader
-        title="录取查询"
-        description="用自然语言查询投档录取数据，系统会返回答案、明细和 SQL。"
-      />
+      <QueryHeader title="录取查询" />
       <form className="queryForm" onSubmit={submit}>
         <textarea
           value={question}
@@ -159,7 +143,6 @@ function AdmissionPanel({ apiKey }: { apiKey: string }) {
           </button>
         </div>
       </form>
-      <ExampleBar examples={admissionExamples} onPick={setQuestion} />
       {error && <ErrorMessage message={error} />}
       {result && <AdmissionResult result={result} />}
     </div>
@@ -167,7 +150,7 @@ function AdmissionPanel({ apiKey }: { apiKey: string }) {
 }
 
 function PolicyPanel({ apiKey }: { apiKey: string }) {
-  const [question, setQuestion] = useState(policyExamples[0]);
+  const [question, setQuestion] = useState("");
   const [school, setSchool] = useState("北京大学");
   const [year, setYear] = useState(2026);
   const [category, setCategory] = useState("university_admission_chapter");
@@ -203,10 +186,7 @@ function PolicyPanel({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="page">
-      <QueryHeader
-        title="政策问答"
-        description="检索招生章程、政策文档和本地 RAG 知识库。"
-      />
+      <QueryHeader title="政策问答" />
       <form className="queryForm" onSubmit={submit}>
         <textarea
           value={question}
@@ -236,37 +216,17 @@ function PolicyPanel({ apiKey }: { apiKey: string }) {
           </button>
         </div>
       </form>
-      <ExampleBar examples={policyExamples} onPick={setQuestion} />
       {error && <ErrorMessage message={error} />}
       {result && <PolicyResultView result={result} />}
     </div>
   );
 }
 
-function QueryHeader({ title, description }: { title: string; description: string }) {
+function QueryHeader({ title }: { title: string }) {
   return (
     <header className="queryHeader">
       <h2>{title}</h2>
-      <p>{description}</p>
     </header>
-  );
-}
-
-function ExampleBar({
-  examples,
-  onPick,
-}: {
-  examples: string[];
-  onPick: (example: string) => void;
-}) {
-  return (
-    <div className="examples">
-      {examples.map((example) => (
-        <button key={example} onClick={() => onPick(example)} type="button">
-          {example}
-        </button>
-      ))}
-    </div>
   );
 }
 

@@ -23,6 +23,12 @@ pip install -e packages/rag[db]
 pip install -e apps/api[dev]
 ```
 
+如需本地 `sentence-transformers` Embedding 模型，再安装：
+
+```bash
+pip install -e apps/api[local-embedding]
+```
+
 ## 配置
 
 复制 `apps/api/.env.example` 为 `.env` 并填写：
@@ -36,9 +42,9 @@ pip install -e apps/api[dev]
 - `GAOKAO_RAG_ANSWER_MAX_CONTEXT_CHARS` / `GAOKAO_RAG_ANSWER_MAX_HITS`：限制答案生成使用的
   上下文总长度和命中组数，避免把大量重复 chunk 塞进 LLM。
 - `GAOKAO_EMBEDDING_PROVIDER` / `GAOKAO_EMBEDDING_MODEL` / `GAOKAO_EMBEDDING_DIMENSION`：
-  Embedding 查询向量配置。默认 `GAOKAO_EMBEDDING_PROVIDER=local`，使用本地
-  `sentence-transformers` 加载 `Qwen/Qwen3-Embedding-4B`，需与 `rag_chunk.embedding`
-  的 2560 维向量保持一致。
+  Embedding 查询向量配置。本地 Python 默认 `local`，使用 `sentence-transformers` 加载
+  `Qwen/Qwen3-Embedding-4B`，需与 `rag_chunk.embedding` 的 2560 维向量保持一致。
+  Docker Compose 一键环境默认覆盖为 `openai`，避免启动时下载本地大模型。
 - `GAOKAO_EMBEDDING_CACHE_FOLDER`：本地 embedding 模型缓存目录，默认 `models`，
   即从项目根目录启动 API 时使用 `D:\Gaokao\Gaokao\models`。
 - `GAOKAO_EMBEDDING_BASE_URL` / `GAOKAO_EMBEDDING_API_KEY`：

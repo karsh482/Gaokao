@@ -12,13 +12,16 @@ dependencies = [
     "uvicorn[standard]>=0.27,<1",
     "pydantic-settings>=2,<3",
     "gaokao-nl2sql[db]",
-    "gaokao-rag[db,local]",
+    "gaokao-rag[db]",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",
     "httpx>=0.27,<1",
+]
+local-embedding = [
+    "gaokao-rag[local]",
 ]
 
 [tool.setuptools.packages.find]

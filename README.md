@@ -97,6 +97,49 @@ Answer Synthesis
 
 ---
 
+## 一键启动
+
+本项目提供 Docker Compose 本地开发环境，默认会启动 PostgreSQL、FastAPI 和 Web 查询台。
+
+前置条件：
+
+- Docker Desktop / Docker Engine
+- 首次启动需要能拉取 Docker 镜像和 npm / pip 依赖
+
+启动：
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+启动后访问：
+
+- Web 查询台：<http://localhost:5173>
+- API 健康检查：<http://localhost:8000/health>
+- API 文档：<http://localhost:8000/docs>
+- PostgreSQL：`localhost:15432`
+
+首次创建数据库 volume 时，Compose 会自动建表并导入 `data/processed/` 下的公开样例数据。
+当前贵州 2025 staging 数据预期包含：
+
+- `staging.source_files`：16 行
+- `staging.admission_records`：24643 行
+- `staging.score_segments`：10574 行
+
+如果修改了 schema 或 CSV，需要重建本地开发数据库：
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+默认一键环境优先保证录取查询可用；RAG `/policy/query` 默认使用 OpenAI 兼容 Embedding
+配置，不会在容器启动时下载本地 embedding 大模型。如需政策检索，请在 `.env` 中配置
+`GAOKAO_EMBEDDING_API_KEY`，或按 `docs/rag-import.md` 切换成本地模型模式。
+
+---
+
 ## 招募
 
 欢迎有意向一起研究相关项目内容的：
@@ -106,4 +149,3 @@ Answer Synthesis
 - 前端工程师
 - 教育行业从业者
 - 高考志愿顾问
-
