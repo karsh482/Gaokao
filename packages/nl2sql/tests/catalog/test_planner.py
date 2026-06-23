@@ -1,0 +1,137 @@
+"""QueryPlanner 单元测试：高频查询模板 SQL。"""
+
+from __future__ import annotations
+
+from gaokao_nl2sql.catalog.classifier import QueryClassifier, QueryCategory
+from gaokao_nl2sql.catalog.planner import QueryPlanner
+from gaokao_nl2sql.catalog.scope import QueryScope
+
+
+def _plan(question: str):
+    classifier = QueryClassifier()
+    return QueryPlanner().plan(
+        question=question,
+        scope=QueryScope("贵州", 2025, False, False),
+        query=classifier.classify(question),
+    )
+
+
+def test_school_query_template_joins_school_master_data() -> None:
+    plan = _plan("查询贵州大学投档线和基本信息")
+
+    assert plan is not None
+    assert plan.template_name == "school_detail"
+    assert "FROM staging.admission_records ar" in plan.sql
+    assert "LEFT JOIN school s" in plan.sql
+    assert "ar.exam_province = '贵州'" in plan.sql
+    assert "ar.plan_year = 2025" in plan.sql
+
+
+def test_admission_search_template_orders_by_rank_gap() -> None:
+    plan = _plan("物理类 位次 10000 能上哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "admission_search_lookup"
+    assert "ar.min_rank >= 10000" in plan.sql
+    assert "ORDER BY ABS(ar.min_rank - 10000)" in plan.sql
+
+
+def test_admission_feasibility_template_uses_rank_gap() -> None:
+    plan = _plan("贵州物理类 位次 10000 能不能上贵州大学")
+
+    assert plan is not None
+    assert plan.template_name == "admission_feasibility_lookup"
+    assert "ar.school_name ILIKE" in plan.sql
+    assert "'贵州大学'" in plan.sql
+    assert "能不能上贵州大学" not in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "ar.major_name ILIKE" not in plan.sql
+    assert "10000 AS candidate_rank" in plan.sql
+    assert "(ar.min_rank - 10000) AS rank_gap" in plan.sql
+    assert "confidence_band" in plan.sql
+    assert "非概率模型结果" in plan.sql
+
+
+def test_admission_search_template_supports_open_school_query() -> None:
+    plan = _plan("贵州物理类 9500名，能上哪些大学？")
+
+    assert plan is not None
+    assert plan.template_name == "admission_search_lookup"
+    assert "ar.school_name ILIKE" not in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "ar.min_rank >= 9500" in plan.sql
+    assert "9500 AS candidate_rank" in plan.sql
+    assert "ORDER BY ABS(ar.min_rank - 9500)" in plan.sql
+
+
+def test_admission_feasibility_template_supports_major_filter() -> None:
+    plan = _plan("贵州历史类 位次 10000 能不能上贵州大学法学专业")
+
+    assert plan is not None
+    assert plan.template_name == "admission_feasibility_lookup"
+    assert "ar.major_name ILIKE" in plan.sql
+    assert "法学" in plan.sql
+
+
+def test_admission_feasibility_template_supports_score_gap() -> None:
+    plan = _plan("物理类 580分能不能上贵州大学")
+
+    assert plan is not None
+    assert plan.template_name == "admission_feasibility_lookup"
+    assert "580 AS candidate_score" in plan.sql
+    assert "(580 - ar.min_score) AS score_gap" in plan.sql
+    assert "优先建议使用位次评估" in plan.sql
+
+
+def test_region_template_uses_school_and_province_only() -> None:
+    plan = _plan("成都有哪些大学")
+
+    assert plan is not None
+    assert plan.template_name == "region_school_lookup"
+    assert "FROM school s" in plan.sql
+    assert "LEFT JOIN province p" in plan.sql
+    assert "staging.admission_records" not in plan.sql
+
+
+def test_multi_filter_template_combines_rank_ownership_tuition_and_major() -> None:
+    plan = _plan("物理类 位次 30000 公办 学费 8000 以下的计算机专业有哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "multi_filter_lookup"
+    assert "LEFT JOIN school s" in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "ar.min_rank <= 30000" in plan.sql
+    assert "s.ownership = '公办'" in plan.sql
+    assert "ar.tuition <= 8000" in plan.sql
+    assert "ar.major_name ILIKE" in plan.sql
+    assert "ORDER BY ar.min_rank ASC" in plan.sql
+
+
+def test_multi_filter_template_supports_city_filter() -> None:
+    plan = _plan("物理类 位次 50000 成都 公办大学有哪些")
+
+    assert plan is not None
+    assert plan.template_name == "multi_filter_lookup"
+    assert "s.city ILIKE" in plan.sql
+    assert "s.ownership = '公办'" in plan.sql
+
+
+def test_selection_requirement_template_requires_school_or_major() -> None:
+    plan = _plan("计算机专业选科要求是什么")
+
+    assert plan is not None
+    assert plan.template_name == "selection_requirement_lookup"
+    assert "selection_requirements IS NOT NULL" in plan.sql
+
+
+def test_generic_query_has_no_template() -> None:
+    classifier = QueryClassifier()
+    query = classifier.classify("你好")
+    plan = QueryPlanner().plan(
+        question="你好",
+        scope=QueryScope("贵州", 2025, False, False),
+        query=query,
+    )
+
+    assert query.category is QueryCategory.GENERIC
+    assert plan is None

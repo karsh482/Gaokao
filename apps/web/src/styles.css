@@ -1,0 +1,450 @@
+:root {
+  font-family:
+    Inter, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui,
+    sans-serif;
+  color: #17202a;
+  background: #f4f6f8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 22px;
+  color: #f8fafc;
+  background: #1f2933;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.brandMark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  font-weight: 800;
+  color: #13231b;
+  background: #8ee6b1;
+  border-radius: 8px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.brand p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #bdc8d4;
+}
+
+.modeNav {
+  display: grid;
+  gap: 8px;
+}
+
+.modeNav button,
+.queryForm button,
+.examples button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.modeNav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  color: #d7dee7;
+  text-align: left;
+  background: transparent;
+}
+
+.modeNav button.active,
+.modeNav button:hover {
+  color: #ffffff;
+  background: #344452;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span,
+.formGrid span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #5d6b7a;
+}
+
+.sidebar .field span {
+  color: #d7dee7;
+}
+
+.field input,
+.formGrid input,
+.queryForm textarea {
+  width: 100%;
+  border: 1px solid #d5dce4;
+  border-radius: 8px;
+  color: #17202a;
+  background: #ffffff;
+}
+
+.field input,
+.formGrid input {
+  height: 38px;
+  padding: 0 11px;
+}
+
+.queryForm textarea {
+  min-height: 112px;
+  resize: vertical;
+  padding: 13px 14px;
+  line-height: 1.6;
+}
+
+.workspace {
+  min-width: 0;
+  padding: 28px;
+}
+
+.page {
+  display: grid;
+  gap: 18px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.queryHeader h2 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.queryHeader p {
+  margin: 6px 0 0;
+  color: #5d6b7a;
+}
+
+.queryForm {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgb(31 41 51 / 7%);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.formGrid label {
+  display: grid;
+  gap: 7px;
+}
+
+.queryForm button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 16px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #256b50;
+}
+
+.queryForm button:hover {
+  background: #1e5c44;
+}
+
+.queryForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.examples button {
+  padding: 7px 10px;
+  color: #2b3a47;
+  background: #e9eef3;
+}
+
+.examples button:hover {
+  background: #dce5ee;
+}
+
+.resultStack {
+  display: grid;
+  gap: 14px;
+}
+
+.answerBlock,
+.tablePanel,
+.detailsPanel,
+.emptyState,
+.errorBox {
+  background: #ffffff;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+}
+
+.answerBlock {
+  padding: 18px;
+}
+
+.answerBlock h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #256b50;
+}
+
+.answerBlock p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.75;
+}
+
+.answerBlock small {
+  display: block;
+  margin-top: 12px;
+  color: #697888;
+  line-height: 1.6;
+}
+
+.metaStrip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metaStrip div {
+  min-width: 0;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+}
+
+.metaStrip span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: #697888;
+}
+
+.metaStrip strong {
+  display: block;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tablePanel {
+  overflow: hidden;
+}
+
+.panelTitle,
+.detailsPanel summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 14px;
+  font-weight: 800;
+  color: #263645;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border-top: 1px solid #edf1f5;
+}
+
+table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  max-width: 320px;
+  padding: 10px 12px;
+  overflow: hidden;
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid #edf1f5;
+}
+
+th {
+  color: #506070;
+  background: #f8fafc;
+}
+
+.detailsPanel {
+  overflow: hidden;
+}
+
+.detailsPanel summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.detailsPanel summary::-webkit-details-marker {
+  display: none;
+}
+
+.detailsPanel > div {
+  padding: 0 14px 14px;
+}
+
+pre {
+  max-height: 420px;
+  padding: 12px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #dbe6f1;
+  background: #1f2933;
+  border-radius: 8px;
+}
+
+.plainList {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+  margin: 0;
+  color: #334252;
+}
+
+.muted {
+  margin: 0;
+  color: #697888;
+}
+
+.emptyState {
+  padding: 22px;
+  color: #697888;
+}
+
+.errorBox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 13px 14px;
+  color: #8a2f23;
+  background: #fff1ee;
+  border-color: #ffd2cb;
+}
+
+.chunkList {
+  display: grid;
+  gap: 12px;
+}
+
+.chunkItem {
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+}
+
+.chunkItem p {
+  margin: 10px 0 0;
+  line-height: 1.65;
+}
+
+.chunkMeta {
+  display: grid;
+  gap: 4px;
+}
+
+.chunkMeta span {
+  font-size: 12px;
+  color: #697888;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 920px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding: 18px;
+  }
+
+  .modeNav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace {
+    padding: 18px;
+  }
+
+  .formGrid,
+  .metaStrip {
+    grid-template-columns: 1fr;
+  }
+}

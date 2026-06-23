@@ -14,6 +14,19 @@
 
 ---
 
+## 当前进度
+
+| 层 | 状态 |
+| --- | --- |
+| 数据基础设施（schema / Docker / 贵州 2025 数据 / 院校主数据 / ETL 工具链） | ✅ 可用 |
+| NL2SQL + FastAPI 查询闭环 | 🚧 进行中 |
+| RAG chunk 检索 | 🚧 进行中 |
+| Agent / 前端 / 评测 | ⏳ 未开始 |
+
+详细里程碑与待办见 [docs/roadmap.md](docs/roadmap.md)。
+
+---
+
 ## 技术架构
 
 ```text
@@ -79,7 +92,7 @@ Answer Synthesis
 - pgvector
 - LlamaIndex
 - LangGraph
-- BGE-M3
+- Qwen3-Embedding-4B
 - Docker
 
 ---

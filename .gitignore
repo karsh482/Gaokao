@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+/data/未清洗数据
+
+# Private ETL code must stay outside the public repository.
+/packages/etl/
+
+# Local model cache. Keep only the directory marker in Git.
+/models/*
+!/models/.gitkeep
+!/models/README.md

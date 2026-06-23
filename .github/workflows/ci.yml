@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate-processed-csv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate processed CSV contract
+        run: python scripts/validate_processed_csv.py
+
+  nl2sql-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install nl2sql package
+        run: pip install -e "packages/nl2sql[dev]"
+      - name: Run nl2sql tests
+        run: pytest packages/nl2sql -q

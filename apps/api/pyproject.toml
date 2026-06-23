@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaokao-api"
+version = "0.1.0"
+description = "FastAPI service exposing natural-language query over the Gaokao dataset."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110,<1",
+    "uvicorn[standard]>=0.27,<1",
+    "pydantic-settings>=2,<3",
+    "gaokao-nl2sql[db]",
+    "gaokao-rag[db,local]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "httpx>=0.27,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

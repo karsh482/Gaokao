@@ -1,0 +1,31 @@
+services:
+  gaokao-postgres:
+    image: ${GAOKAO_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    container_name: gaokao-postgres
+    environment:
+      POSTGRES_DB: ${GAOKAO_POSTGRES_DB:-gaokao}
+      POSTGRES_USER: ${GAOKAO_POSTGRES_USER:-gaokao}
+      POSTGRES_PASSWORD: ${GAOKAO_POSTGRES_PASSWORD:-gaokao_dev_password}
+    ports:
+      - "${GAOKAO_POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - gaokao-postgres-data:/var/lib/postgresql/data
+      - ./packages/schema/001_core_tables.sql:/docker-entrypoint-initdb.d/001_core_tables.sql:ro
+      - ./packages/schema/002_staging_tables.sql:/docker-entrypoint-initdb.d/002_staging_tables.sql:ro
+      - ./packages/schema/004_seed_master_data.sh:/docker-entrypoint-initdb.d/003_seed_master_data.sh:ro
+      - ./packages/schema/003_seed_staging_data.sh:/docker-entrypoint-initdb.d/004_seed_staging_data.sh:ro
+      - ./packages/schema/005_rag_tables.sql:/docker-entrypoint-initdb.d/005_rag_tables.sql:ro
+      - ./data/processed:/data/processed:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  gaokao-postgres-data:
