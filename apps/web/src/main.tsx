@@ -117,7 +117,7 @@ function AdmissionPanel({ apiKey }: { apiKey: string }) {
 
   return (
     <div className="page">
-      <QueryHeader title="录取查询" />
+      <QueryHeader title="志愿咨询" />
       <form className="queryForm" onSubmit={submit}>
         <textarea
           value={question}
