@@ -240,7 +240,7 @@ function AdmissionResult({ result }: { result: QueryResponse }) {
           ["省份", result.exam_province],
           ["年份", String(result.plan_year)],
           ["科类", result.subject_category ?? "未限定"],
-          ["模板", result.template_name ?? "LLM SQL"],
+          ["查询方式", formatTemplateName(result.template_name)],
         ]}
       />
       <DataTable rows={result.rows} />
@@ -248,12 +248,10 @@ function AdmissionResult({ result }: { result: QueryResponse }) {
         <List values={result.notes} />
       </Details>
       <Details title="引用来源" icon={<BookOpenText size={17} />}>
-        <List values={result.citations.map((item) => `${item.label} (${item.source})`)} />
+        <List values={result.citations.map(formatAdmissionCitation)} />
       </Details>
-      <Details title="SQL" icon={<Database size={17} />}>
+      <Details title="调试信息" icon={<Database size={17} />}>
         <pre>{result.sql ?? "未执行 SQL"}</pre>
-      </Details>
-      <Details title="完整响应" icon={<Table2 size={17} />}>
         <pre>{JSON.stringify(result, null, 2)}</pre>
       </Details>
     </div>
@@ -320,7 +318,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
     rows.slice(0, 30).forEach((row) => {
       Object.keys(row).forEach((key) => names.add(key));
     });
-    return Array.from(names);
+    return Array.from(names).sort(compareColumns);
   }, [rows]);
 
   if (!rows.length) {
@@ -338,7 +336,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
           <thead>
             <tr>
               {columns.map((column) => (
-                <th key={column}>{column}</th>
+                <th key={column}>{formatColumnLabel(column)}</th>
               ))}
             </tr>
           </thead>
@@ -346,7 +344,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
             {rows.slice(0, 50).map((row, index) => (
               <tr key={index}>
                 {columns.map((column) => (
-                  <td key={column}>{formatCell(row[column])}</td>
+                  <td key={column}>{formatCell(row[column], column)}</td>
                 ))}
               </tr>
             ))}
@@ -401,14 +399,165 @@ function ErrorMessage({ message }: { message: string }) {
   );
 }
 
-function formatCell(value: unknown): string {
+const COLUMN_LABELS: Record<string, string> = {
+  school_name: "院校",
+  source_school_name: "院校原始名称",
+  school_code_in_exam_province: "院校代码",
+  major_name: "专业",
+  major_code_in_exam_province: "专业代码",
+  batch: "批次",
+  subject_category: "科类",
+  admission_track: "招生赛道",
+  admission_program: "专项计划",
+  selection_requirements: "选科要求",
+  enrollment_plan_count: "招生计划数",
+  filing_count: "投档人数",
+  admitted_count: "录取人数",
+  min_score: "最低分",
+  min_rank: "最低位次",
+  tuition: "学费",
+  duration: "学制",
+  source_page: "来源页码",
+  candidate_rank: "考生位次",
+  candidate_score: "考生分数",
+  rank_gap: "位次差",
+  score_gap: "分差",
+  confidence_band: "参考档位",
+  confidence_note: "说明",
+  city: "院校所在城市",
+  ownership: "办学性质",
+  province_name: "院校所在省份",
+  school_type: "院校类型",
+  education_level: "办学层次",
+  is_double_first_class: "双一流",
+  score_label: "分数段",
+  score: "分数",
+  score_type: "分数口径",
+  segment_name: "分段类别",
+  segment_count: "本段人数",
+  cumulative_count: "累计人数",
+  cumulative_ratio: "累计比例",
+  exam_province: "考试省份",
+  plan_year: "年份",
+};
+
+const COLUMN_ORDER = [
+  "school_name",
+  "major_name",
+  "batch",
+  "subject_category",
+  "admission_program",
+  "selection_requirements",
+  "min_score",
+  "min_rank",
+  "candidate_score",
+  "candidate_rank",
+  "score_gap",
+  "rank_gap",
+  "confidence_band",
+  "tuition",
+  "city",
+  "ownership",
+];
+
+function formatCell(value: unknown, column?: string): string {
   if (value === null || value === undefined) {
-    return "";
+    return "—";
+  }
+  if (column === "is_double_first_class") {
+    return value ? "是" : "否";
+  }
+  if (column === "cumulative_ratio" && typeof value === "number") {
+    return `${value}%`;
   }
   if (typeof value === "object") {
     return JSON.stringify(value);
   }
+  if (column === "confidence_band") {
+    return formatConfidenceBand(String(value));
+  }
   return String(value);
+}
+
+function formatColumnLabel(column: string): string {
+  return COLUMN_LABELS[column] ?? humanizeColumn(column);
+}
+
+function humanizeColumn(column: string): string {
+  return column.replace(/_/g, " ");
+}
+
+function compareColumns(a: string, b: string): number {
+  const aIndex = COLUMN_ORDER.indexOf(a);
+  const bIndex = COLUMN_ORDER.indexOf(b);
+  if (aIndex !== -1 || bIndex !== -1) {
+    if (aIndex === -1) {
+      return 1;
+    }
+    if (bIndex === -1) {
+      return -1;
+    }
+    return aIndex - bIndex;
+  }
+  return a.localeCompare(b, "zh-CN");
+}
+
+function formatConfidenceBand(value: string): string {
+  if (value === "冲") {
+    return "冲刺";
+  }
+  if (value === "稳") {
+    return "稳妥";
+  }
+  if (value === "保") {
+    return "保底";
+  }
+  return value;
+}
+
+function formatTemplateName(value: string | null): string {
+  if (!value) {
+    return "自然语言查询";
+  }
+  const mapping: Record<string, string> = {
+    admission_search_lookup: "录取检索",
+    semantic_admission_search: "录取检索",
+    admission_feasibility_lookup: "录取可行性评估",
+    semantic_admission_feasibility: "录取可行性评估",
+    score_rank_filter: "分数位次筛选",
+    multi_filter_lookup: "组合条件筛选",
+    school_detail: "院校详情查询",
+    major_lookup: "专业查询",
+    region_school_lookup: "地区院校查询",
+    selection_requirement_lookup: "选科要求查询",
+  };
+  return mapping[value] ?? value;
+}
+
+function formatAdmissionCitation(item: {
+  label: string;
+  source: string;
+  fields: string[];
+  exam_province: string;
+  plan_year: number;
+  note: string;
+}) {
+  const source = formatDataSource(item.source);
+  const fields = item.fields.length
+    ? `，涉及字段：${item.fields.map(formatColumnLabel).join("、")}`
+    : "";
+  const note = item.note ? `，说明：${item.note}` : "";
+  return `${item.label}，数据来源：${source}，范围：${item.exam_province} ${item.plan_year}${fields}${note}`;
+}
+
+function formatDataSource(source: string): string {
+  const mapping: Record<string, string> = {
+    "staging.admission_records": "投档录取数据",
+    "staging.score_segments": "一分一段数据",
+    school: "院校主数据",
+    province: "省份主数据",
+  };
+  return mapping[source] ?? source;
 }
 
 function formatSource(item: { page_number: number | null; page_side: string | null; similarity?: number }) {
