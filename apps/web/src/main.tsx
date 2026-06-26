@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertCircle,
@@ -6,11 +6,17 @@ import {
   Database,
   FileText,
   Loader2,
+  MessageSquare,
+  Plus,
   Search,
+  Send,
   Settings,
+  Sparkles,
   Table2,
+  Trash2,
 } from "lucide-react";
 import {
+  ChatMessage,
   PolicyQueryResponse,
   QueryResponse,
   queryAdmission,
@@ -20,13 +26,122 @@ import "./styles.css";
 
 type Mode = "admission" | "policy";
 
+type AdmissionChatMessage = ChatMessage & {
+  id: string;
+  result?: QueryResponse;
+};
+
+type AdmissionConversation = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  examProvince: string;
+  planYear: number;
+  messages: AdmissionChatMessage[];
+};
+
+type AdmissionChatState = {
+  conversations: AdmissionConversation[];
+  activeConversationId: string;
+};
+
+const DEFAULT_EXAM_PROVINCE = "贵州";
+const DEFAULT_PLAN_YEAR = 2026;
+const DEFAULT_CONVERSATION_TITLE = "新对话";
+const MAX_ADMISSION_CONVERSATIONS = 30;
+const ADMISSION_CONVERSATIONS_STORAGE_KEY = "gaokaoAdmissionConversations";
+const ADMISSION_ACTIVE_CONVERSATION_STORAGE_KEY = "gaokaoAdmissionActiveConversation";
+const ADMISSION_PROMPTS = [
+  "贵州物理类 位次10000 能不能上贵州大学？",
+  "580分可以报哪些公办计算机专业？",
+  "贵州大学法学近年录取位次怎么样？",
+  "历史类 12000 位次有什么稳妥选择？",
+];
+
 function App() {
   const [mode, setMode] = useState<Mode>("admission");
+  const [admissionChatState, setAdmissionChatState] = useState(loadAdmissionChatState);
   const [apiKey, setApiKey] = useState(localStorage.getItem("gaokaoApiKey") ?? "");
+  const [gpuRentApiKey, setGpuRentApiKey] = useState(
+    localStorage.getItem("gaokaoGpuRentApiKey") ?? "",
+  );
+  const activeAdmissionConversation = useMemo(
+    () =>
+      admissionChatState.conversations.find(
+        (conversation) => conversation.id === admissionChatState.activeConversationId,
+      ) ?? admissionChatState.conversations[0],
+    [admissionChatState],
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        ADMISSION_CONVERSATIONS_STORAGE_KEY,
+        JSON.stringify(admissionChatState.conversations.slice(0, MAX_ADMISSION_CONVERSATIONS)),
+      );
+      localStorage.setItem(
+        ADMISSION_ACTIVE_CONVERSATION_STORAGE_KEY,
+        admissionChatState.activeConversationId,
+      );
+    } catch {
+      // Ignore localStorage quota or privacy-mode failures; the active chat can still continue.
+    }
+  }, [admissionChatState]);
 
   function updateApiKey(value: string) {
     setApiKey(value);
     localStorage.setItem("gaokaoApiKey", value);
+  }
+
+  function updateGpuRentApiKey(value: string) {
+    setGpuRentApiKey(value);
+    localStorage.setItem("gaokaoGpuRentApiKey", value);
+  }
+
+  function startNewAdmissionConversation() {
+    const conversation = createAdmissionConversation();
+    setAdmissionChatState((current) => {
+      const active = current.conversations.find(
+        (item) => item.id === current.activeConversationId,
+      );
+      if (active && active.messages.length === 0 && active.title === DEFAULT_CONVERSATION_TITLE) {
+        return { ...current, activeConversationId: active.id };
+      }
+      return {
+        activeConversationId: conversation.id,
+        conversations: [conversation, ...current.conversations].slice(0, MAX_ADMISSION_CONVERSATIONS),
+      };
+    });
+  }
+
+  function selectAdmissionConversation(conversationId: string) {
+    setAdmissionChatState((current) => ({ ...current, activeConversationId: conversationId }));
+  }
+
+  function deleteAdmissionConversation(conversationId: string) {
+    setAdmissionChatState((current) => {
+      const conversations = current.conversations.filter(
+        (conversation) => conversation.id !== conversationId,
+      );
+      if (conversations.length === current.conversations.length) {
+        return current;
+      }
+      if (!conversations.length) {
+        const conversation = createAdmissionConversation();
+        return {
+          activeConversationId: conversation.id,
+          conversations: [conversation],
+        };
+      }
+      return {
+        activeConversationId:
+          current.activeConversationId === conversationId
+            ? conversations[0].id
+            : current.activeConversationId,
+        conversations,
+      };
+    });
   }
 
   return (
@@ -39,6 +154,16 @@ function App() {
             <p>结构化录取查询与政策 RAG</p>
           </div>
         </div>
+
+        {mode === "admission" && (
+          <AdmissionConversationNav
+            activeConversationId={activeAdmissionConversation?.id}
+            conversations={admissionChatState.conversations}
+            onNewConversation={startNewAdmissionConversation}
+            onDeleteConversation={deleteAdmissionConversation}
+            onSelectConversation={selectAdmissionConversation}
+          />
+        )}
 
         <nav className="modeNav" aria-label="查询模式">
           <button
@@ -71,85 +196,315 @@ function App() {
             type="password"
           />
         </label>
+
+        <label className="field">
+          <span>
+            <Settings size={15} />
+            ai-gpurent Key
+          </span>
+          <input
+            value={gpuRentApiKey}
+            onChange={(event) => updateGpuRentApiKey(event.target.value)}
+            placeholder="用于 LLM token 计费"
+            type="password"
+          />
+        </label>
       </aside>
 
       <section className="workspace">
         {mode === "admission" ? (
-          <AdmissionPanel apiKey={apiKey} />
+          <AdmissionPanel
+            activeConversation={activeAdmissionConversation}
+            apiKey={apiKey}
+            gpuRentApiKey={gpuRentApiKey}
+            onNewConversation={startNewAdmissionConversation}
+            setChatState={setAdmissionChatState}
+          />
         ) : (
-          <PolicyPanel apiKey={apiKey} />
+          <PolicyPanel apiKey={apiKey} gpuRentApiKey={gpuRentApiKey} />
         )}
       </section>
     </main>
   );
 }
 
-function AdmissionPanel({ apiKey }: { apiKey: string }) {
+function AdmissionConversationNav({
+  activeConversationId,
+  conversations,
+  onNewConversation,
+  onDeleteConversation,
+  onSelectConversation,
+}: {
+  activeConversationId?: string;
+  conversations: AdmissionConversation[];
+  onNewConversation: () => void;
+  onDeleteConversation: (conversationId: string) => void;
+  onSelectConversation: (conversationId: string) => void;
+}) {
+  return (
+    <section className="sidebarHistory" aria-label="录取查询历史对话">
+      <button className="newConversationButton" onClick={onNewConversation} type="button">
+        <Plus size={17} />
+        新对话
+      </button>
+      <div className="sidebarHistoryTitle">历史对话</div>
+      <div className="sidebarConversationList">
+        {conversations.map((conversation) => (
+          <div
+            className={
+              conversation.id === activeConversationId
+                ? "sidebarConversationItem active"
+                : "sidebarConversationItem"
+            }
+            key={conversation.id}
+          >
+            <button
+              className="sidebarConversationSelect"
+              onClick={() => onSelectConversation(conversation.id)}
+              type="button"
+            >
+              <MessageSquare size={15} />
+              <span>{conversation.title}</span>
+              <small>{formatConversationTime(conversation.updatedAt)}</small>
+            </button>
+            <button
+              aria-label={`删除对话：${conversation.title}`}
+              className="sidebarConversationDelete"
+              onClick={() => onDeleteConversation(conversation.id)}
+              title="删除对话"
+              type="button"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdmissionPanel({
+  activeConversation,
+  apiKey,
+  gpuRentApiKey,
+  onNewConversation,
+  setChatState,
+}: {
+  activeConversation?: AdmissionConversation;
+  apiKey: string;
+  gpuRentApiKey: string;
+  onNewConversation: () => void;
+  setChatState: React.Dispatch<React.SetStateAction<AdmissionChatState>>;
+}) {
   const [question, setQuestion] = useState("");
-  const [examProvince, setExamProvince] = useState("贵州");
-  const [planYear, setPlanYear] = useState(2025);
-  const [result, setResult] = useState<QueryResponse | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const messages = activeConversation?.messages ?? [];
+  const loading = pendingConversationId !== null;
+  const activeConversationLoading = pendingConversationId === activeConversation?.id;
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    if (list) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [activeConversation?.id, activeConversationLoading, messages.length]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 168)}px`;
+  }, [question]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setLoading(true);
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion || !activeConversation || pendingConversationId) {
+      return;
+    }
+    const conversationId = activeConversation.id;
+    const userMessage: AdmissionChatMessage = {
+      id: createMessageId(),
+      role: "user",
+      content: trimmedQuestion,
+    };
+    const history = toQueryHistory(messages);
+    setChatState((current) =>
+      patchAdmissionConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        title: getNextConversationTitle(conversation, trimmedQuestion),
+        updatedAt: Date.now(),
+        messages: [...conversation.messages, userMessage],
+      })),
+    );
+    setQuestion("");
+    setPendingConversationId(conversationId);
     setError("");
     try {
-      setResult(
-        await queryAdmission(
-          {
-            question,
-            exam_province: examProvince || undefined,
-            plan_year: planYear || undefined,
-          },
-          apiKey,
-        ),
+      const response = await queryAdmission(
+        {
+          question: trimmedQuestion,
+          exam_province: DEFAULT_EXAM_PROVINCE,
+          plan_year: resolveAdmissionPlanYear(trimmedQuestion),
+          history,
+        },
+        apiKey,
+        gpuRentApiKey,
+      );
+      setChatState((current) =>
+        patchAdmissionConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          updatedAt: Date.now(),
+          messages: [
+            ...conversation.messages,
+            {
+              id: createMessageId(),
+              role: "assistant",
+              content: response.answer || response.summary || "暂无可展示答案。",
+              result: response,
+            },
+          ],
+        })),
       );
     } catch (err) {
-      setResult(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setPendingConversationId(null);
+    }
+  }
+
+  function startNewConversation() {
+    onNewConversation();
+    setError("");
+    setQuestion("");
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function usePrompt(prompt: string) {
+    setQuestion(prompt);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      formRef.current?.requestSubmit();
     }
   }
 
   return (
-    <div className="page">
-      <QueryHeader title="志愿咨询" />
-      <form className="queryForm" onSubmit={submit}>
-        <textarea
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          rows={4}
-        />
-        <div className="formGrid">
-          <label>
-            <span>考试省份</span>
-            <input value={examProvince} onChange={(event) => setExamProvince(event.target.value)} />
-          </label>
-          <label>
-            <span>招生年份</span>
-            <input
-              value={planYear}
-              onChange={(event) => setPlanYear(Number(event.target.value))}
-              type="number"
-            />
-          </label>
-          <button disabled={loading || !question.trim()} type="submit">
-            {loading ? <Loader2 className="spin" size={18} /> : <Search size={18} />}
-            查询
-          </button>
+    <div className="page admissionPage">
+      <section className={messages.length === 0 ? "chatPanel emptyChat" : "chatPanel"}>
+        <div className="messageList" ref={messageListRef}>
+          {messages.length === 0 ? (
+            <div className="assistantEmptyState">
+              <div className="assistantMark">
+                <Sparkles size={24} />
+              </div>
+              <h2>2026高考志愿AI智能助手</h2>
+              <form className="chatComposer centerComposer" onSubmit={submit} ref={formRef}>
+                <textarea
+                  aria-label="输入志愿咨询问题"
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder="询问分数、位次、院校、专业或志愿梯度"
+                  ref={textareaRef}
+                  rows={2}
+                  value={question}
+                />
+                <button disabled={loading || !question.trim()} title="发送" type="submit">
+                  {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+                </button>
+              </form>
+              <div className="promptGrid">
+                {ADMISSION_PROMPTS.map((prompt) => (
+                  <button key={prompt} onClick={() => usePrompt(prompt)} type="button">
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((message) => (
+              <ChatBubble message={message} key={message.id} />
+            ))
+          )}
+          {activeConversationLoading && (
+            <div className="chatMessage assistant loadingMessage">
+              <div className="messageAvatar">AI</div>
+              <div className="messageBody inlineStatus">
+                <Loader2 className="spin" size={18} />
+                <span>正在查询...</span>
+              </div>
+            </div>
+          )}
         </div>
-      </form>
-      {error && <ErrorMessage message={error} />}
-      {result && <AdmissionResult result={result} />}
+
+        {messages.length > 0 && (
+          <div className="composerDock">
+            {error && <ErrorMessage message={error} />}
+            <form className="chatComposer" onSubmit={submit} ref={formRef}>
+              <textarea
+                aria-label="输入志愿咨询问题"
+                onChange={(event) => setQuestion(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="询问分数、位次、院校、专业或志愿梯度"
+                ref={textareaRef}
+                rows={2}
+                value={question}
+              />
+              <button disabled={loading || !question.trim()} title="发送" type="submit">
+                {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {messages.length === 0 && error && (
+          <div className="emptyErrorDock">
+            <ErrorMessage message={error} />
+          </div>
+        )}
+
+        <footer className="chatFooter">
+          <div className="scopeFields scopeSummary" aria-label="查询范围">
+            <div className="scopeBadge">
+              <span>考试省份</span>
+              <strong>{DEFAULT_EXAM_PROVINCE}</strong>
+            </div>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
 
-function PolicyPanel({ apiKey }: { apiKey: string }) {
+function ChatBubble({ message }: { message: AdmissionChatMessage }) {
+  return (
+    <article className={`chatMessage ${message.role}`}>
+      <div className="messageAvatar">{message.role === "user" ? "我" : "AI"}</div>
+      <div className="messageBody">
+        <p>{message.content}</p>
+        {message.result && <AdmissionResult result={message.result} compact />}
+      </div>
+    </article>
+  );
+}
+
+function PolicyPanel({
+  apiKey,
+  gpuRentApiKey,
+}: {
+  apiKey: string;
+  gpuRentApiKey: string;
+}) {
   const [question, setQuestion] = useState("");
   const [school, setSchool] = useState("北京大学");
   const [year, setYear] = useState(2026);
@@ -174,6 +529,7 @@ function PolicyPanel({ apiKey }: { apiKey: string }) {
             include_context: true,
           },
           apiKey,
+          gpuRentApiKey,
         ),
       );
     } catch (err) {
@@ -230,15 +586,14 @@ function QueryHeader({ title }: { title: string }) {
   );
 }
 
-function AdmissionResult({ result }: { result: QueryResponse }) {
+function AdmissionResult({ result, compact = false }: { result: QueryResponse; compact?: boolean }) {
   return (
-    <div className="resultStack">
-      <AnswerBlock answer={result.answer} summary={result.summary} />
+    <div className={compact ? "resultStack compact" : "resultStack"}>
+      {!compact && <AnswerBlock answer={result.answer} summary={result.summary} />}
       <MetaStrip
         items={[
           ["记录数", String(result.row_count)],
           ["省份", result.exam_province],
-          ["年份", String(result.plan_year)],
           ["科类", result.subject_category ?? "未限定"],
           ["查询方式", formatTemplateName(result.template_name)],
         ]}
@@ -249,10 +604,6 @@ function AdmissionResult({ result }: { result: QueryResponse }) {
       </Details>
       <Details title="引用来源" icon={<BookOpenText size={17} />}>
         <List values={result.citations.map(formatAdmissionCitation)} />
-      </Details>
-      <Details title="调试信息" icon={<Database size={17} />}>
-        <pre>{result.sql ?? "未执行 SQL"}</pre>
-        <pre>{JSON.stringify(result, null, 2)}</pre>
       </Details>
     </div>
   );
@@ -281,9 +632,6 @@ function PolicyResultView({ result }: { result: PolicyQueryResponse }) {
       </Details>
       <Details title="口径说明" icon={<AlertCircle size={17} />}>
         <List values={result.notes} />
-      </Details>
-      <Details title="完整响应" icon={<Table2 size={17} />}>
-        <pre>{JSON.stringify(result, null, 2)}</pre>
       </Details>
     </div>
   );
@@ -316,7 +664,11 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
   const columns = useMemo(() => {
     const names = new Set<string>();
     rows.slice(0, 30).forEach((row) => {
-      Object.keys(row).forEach((key) => names.add(key));
+      Object.keys(row).forEach((key) => {
+        if (!HIDDEN_RESULT_COLUMNS.has(key)) {
+          names.add(key);
+        }
+      });
     });
     return Array.from(names).sort(compareColumns);
   }, [rows]);
@@ -399,6 +751,167 @@ function ErrorMessage({ message }: { message: string }) {
   );
 }
 
+function loadAdmissionChatState(): AdmissionChatState {
+  const fallbackConversation = createAdmissionConversation();
+  try {
+    const rawConversations = localStorage.getItem(ADMISSION_CONVERSATIONS_STORAGE_KEY);
+    const activeConversationId = localStorage.getItem(ADMISSION_ACTIVE_CONVERSATION_STORAGE_KEY);
+    const parsed = rawConversations ? JSON.parse(rawConversations) : null;
+    const conversations = Array.isArray(parsed)
+      ? parsed.map(normalizeAdmissionConversation).filter((item): item is AdmissionConversation => item !== null)
+      : [];
+    if (!conversations.length) {
+      return {
+        activeConversationId: fallbackConversation.id,
+        conversations: [fallbackConversation],
+      };
+    }
+    const sortedConversations = conversations
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, MAX_ADMISSION_CONVERSATIONS);
+    return {
+      activeConversationId:
+        activeConversationId && sortedConversations.some((item) => item.id === activeConversationId)
+          ? activeConversationId
+          : sortedConversations[0].id,
+      conversations: sortedConversations,
+    };
+  } catch {
+    return {
+      activeConversationId: fallbackConversation.id,
+      conversations: [fallbackConversation],
+    };
+  }
+}
+
+function normalizeAdmissionConversation(value: unknown): AdmissionConversation | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const item = value as Partial<AdmissionConversation>;
+  if (typeof item.id !== "string") {
+    return null;
+  }
+  const createdAt = typeof item.createdAt === "number" ? item.createdAt : Date.now();
+  const updatedAt = typeof item.updatedAt === "number" ? item.updatedAt : createdAt;
+  return {
+    id: item.id,
+    title: typeof item.title === "string" && item.title.trim() ? item.title : DEFAULT_CONVERSATION_TITLE,
+    createdAt,
+    updatedAt,
+    examProvince:
+      typeof item.examProvince === "string" && item.examProvince.trim()
+        ? item.examProvince
+        : DEFAULT_EXAM_PROVINCE,
+    planYear: DEFAULT_PLAN_YEAR,
+    messages: Array.isArray(item.messages)
+      ? item.messages
+          .map(normalizeAdmissionMessage)
+          .filter((message): message is AdmissionChatMessage => message !== null)
+      : [],
+  };
+}
+
+function normalizeAdmissionMessage(value: unknown): AdmissionChatMessage | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const item = value as Partial<AdmissionChatMessage>;
+  if ((item.role !== "user" && item.role !== "assistant") || typeof item.content !== "string") {
+    return null;
+  }
+  return {
+    id: typeof item.id === "string" ? item.id : createMessageId(),
+    role: item.role,
+    content: item.content,
+    result: item.result,
+  };
+}
+
+function createAdmissionConversation(): AdmissionConversation {
+  const now = Date.now();
+  return {
+    id: createMessageId(),
+    title: DEFAULT_CONVERSATION_TITLE,
+    createdAt: now,
+    updatedAt: now,
+    examProvince: DEFAULT_EXAM_PROVINCE,
+    planYear: DEFAULT_PLAN_YEAR,
+    messages: [],
+  };
+}
+
+function resolveAdmissionPlanYear(question: string): number | undefined {
+  if (isProgramCatalogQuestion(question)) {
+    return DEFAULT_PLAN_YEAR;
+  }
+  return undefined;
+}
+
+function isProgramCatalogQuestion(question: string): boolean {
+  return [
+    "招生计划",
+    "计划人数",
+    "计划招生",
+    "招生人数",
+    "招生名额",
+    "招收人数",
+    "招多少",
+    "招几人",
+    "招几个人",
+    "招几个",
+    "招几名",
+    "招聘人数",
+    "专业目录",
+    "开设哪些专业",
+    "有哪些专业",
+    "选科要求",
+    "科目要求",
+    "学费",
+    "学制",
+  ].some((keyword) => question.includes(keyword));
+}
+
+function patchAdmissionConversation(
+  state: AdmissionChatState,
+  conversationId: string,
+  update: (conversation: AdmissionConversation) => AdmissionConversation,
+): AdmissionChatState {
+  const conversations = state.conversations.map((conversation) =>
+    conversation.id === conversationId ? update(conversation) : conversation,
+  );
+  return {
+    ...state,
+    conversations: conversations.sort((a, b) => b.updatedAt - a.updatedAt),
+  };
+}
+
+function getNextConversationTitle(conversation: AdmissionConversation, question: string): string {
+  if (conversation.title !== DEFAULT_CONVERSATION_TITLE || conversation.messages.length > 0) {
+    return conversation.title;
+  }
+  return question.length > 22 ? `${question.slice(0, 22)}...` : question;
+}
+
+function formatConversationTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const isSameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  if (isSameDay) {
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  return date.toLocaleDateString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 const COLUMN_LABELS: Record<string, string> = {
   school_name: "院校",
   source_school_name: "院校原始名称",
@@ -408,6 +921,7 @@ const COLUMN_LABELS: Record<string, string> = {
   batch: "批次",
   subject_category: "科类",
   admission_track: "招生赛道",
+  enrollment_type: "招生类型",
   admission_program: "专项计划",
   selection_requirements: "选科要求",
   enrollment_plan_count: "招生计划数",
@@ -418,6 +932,10 @@ const COLUMN_LABELS: Record<string, string> = {
   tuition: "学费",
   duration: "学制",
   source_page: "来源页码",
+  source_file_name: "来源文件",
+  language: "外语语种要求",
+  remarks: "备注",
+  school_location: "院校所在地",
   candidate_rank: "考生位次",
   candidate_score: "考生分数",
   rank_gap: "位次差",
@@ -441,13 +959,36 @@ const COLUMN_LABELS: Record<string, string> = {
   plan_year: "年份",
 };
 
+const HIDDEN_RESULT_COLUMNS = new Set([
+  "source_school_name",
+  "school_code_in_exam_province",
+  "major_code_in_exam_province",
+  "admission_track",
+  "language",
+  "remarks",
+  "school_location",
+  "source_file_id",
+  "source_file_name",
+  "source_page",
+  "source_column",
+  "source_line_start",
+  "source_line_end",
+  "extraction_method",
+  "confidence",
+  "exam_province",
+  "plan_year",
+]);
+
 const COLUMN_ORDER = [
   "school_name",
   "major_name",
   "batch",
   "subject_category",
+  "enrollment_type",
   "admission_program",
   "selection_requirements",
+  "enrollment_plan_count",
+  "duration",
   "min_score",
   "min_rank",
   "candidate_score",
@@ -524,6 +1065,7 @@ function formatTemplateName(value: string | null): string {
     semantic_admission_search: "录取检索",
     admission_feasibility_lookup: "录取可行性评估",
     semantic_admission_feasibility: "录取可行性评估",
+    program_catalog_lookup: "招生计划查询",
     score_rank_filter: "分数位次筛选",
     multi_filter_lookup: "组合条件筛选",
     school_detail: "院校详情查询",
@@ -547,13 +1089,14 @@ function formatAdmissionCitation(item: {
     ? `，涉及字段：${item.fields.map(formatColumnLabel).join("、")}`
     : "";
   const note = item.note ? `，说明：${item.note}` : "";
-  return `${item.label}，数据来源：${source}，范围：${item.exam_province} ${item.plan_year}${fields}${note}`;
+  return `${item.label}，数据来源：${source}，范围：${item.exam_province}${fields}${note}`;
 }
 
 function formatDataSource(source: string): string {
   const mapping: Record<string, string> = {
     "staging.admission_records": "投档录取数据",
     "staging.score_segments": "一分一段数据",
+    "staging.program_catalog_records": "招生专业目录/招生计划数据",
     school: "院校主数据",
     province: "省份主数据",
   };
@@ -575,6 +1118,19 @@ function formatCitation(item: {
 }) {
   const source = item.source_url ? ` ${item.source_url}` : "";
   return `${item.title} ${formatSource(item)}${source}`;
+}
+
+function toQueryHistory(messages: AdmissionChatMessage[]): ChatMessage[] {
+  return messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }))
+    .slice(-8);
+}
+
+function createMessageId(): string {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

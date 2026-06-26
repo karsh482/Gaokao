@@ -90,7 +90,21 @@ _REGION_KEYWORDS = (
     "有哪些院校",
     "有哪些学校",
 )
-_ENROLLMENT_KEYWORDS = ("招生计划", "计划人数", "招多少", "计划招生", "招生名额", "招生人数")
+_ENROLLMENT_KEYWORDS = (
+    "招生计划",
+    "计划人数",
+    "招多少",
+    "招几人",
+    "招几个人",
+    "招几个",
+    "招几名",
+    "计划招生",
+    "招生名额",
+    "招生人数",
+    "招收人数",
+    "计划招聘人数",
+    "招聘人数",
+)
 _STATS_KEYWORDS = ("排名", "排行", "统计", "最高", "最低", "平均", "数量最多", "前几", "排序")
 _COMPARE_KEYWORDS = ("对比", "比较", "哪个更", "和", "与", "vs", "相比", "谁更")
 _MAJOR_KEYWORDS = ("专业", "学科", "院系")
@@ -220,10 +234,10 @@ class QueryClassifier:
 
         if any(kw in text for kw in _SELECTION_REQUIREMENT_KEYWORDS):
             return QueryCategory.SELECTION_REQ
-        if any(kw in text for kw in _SPECIAL_KEYWORDS):
-            return QueryCategory.SPECIAL_PROGRAM
         if any(kw in text for kw in _ENROLLMENT_KEYWORDS):
             return QueryCategory.ENROLLMENT_PLAN
+        if any(kw in text for kw in _SPECIAL_KEYWORDS):
+            return QueryCategory.SPECIAL_PROGRAM
 
         # 多条件组合筛选：出现两个及以上筛选维度。
         if _count_filter_dimensions(text) >= 2:

@@ -16,6 +16,15 @@ def _plan(question: str):
     )
 
 
+def _plan_2026(question: str):
+    classifier = QueryClassifier()
+    return QueryPlanner().plan(
+        question=question,
+        scope=QueryScope("贵州", 2026, False, False),
+        query=classifier.classify(question),
+    )
+
+
 def test_school_query_template_joins_school_master_data() -> None:
     plan = _plan("查询贵州大学投档线和基本信息")
 
@@ -32,7 +41,7 @@ def test_admission_search_template_orders_by_rank_gap() -> None:
 
     assert plan is not None
     assert plan.template_name == "admission_search_lookup"
-    assert "ar.min_rank >= 10000" in plan.sql
+    assert "ar.min_rank BETWEEN GREATEST(1, 10000 - 5000) AND 10000 + 8000" in plan.sql
     assert "ORDER BY ABS(ar.min_rank - 10000)" in plan.sql
 
 
@@ -59,9 +68,26 @@ def test_admission_search_template_supports_open_school_query() -> None:
     assert plan.template_name == "admission_search_lookup"
     assert "ar.school_name ILIKE" not in plan.sql
     assert "ar.subject_category = '物理类'" in plan.sql
-    assert "ar.min_rank >= 9500" in plan.sql
+    assert "ar.min_rank BETWEEN GREATEST(1, 9500 - 5000) AND 9500 + 8000" in plan.sql
     assert "9500 AS candidate_rank" in plan.sql
     assert "ORDER BY ABS(ar.min_rank - 9500)" in plan.sql
+
+
+def test_admission_search_template_converts_score_to_rank_for_rush_stable_secure() -> None:
+    plan = _plan("物理类 580分排名比去年高了1000名，可以冲哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "admission_search_lookup"
+    assert "WITH candidate_profile AS" in plan.sql
+    assert "FROM staging.score_segments ss" in plan.sql
+    assert "ss.subject_category = '物理类'" in plan.sql
+    assert "ss.score = 580" in plan.sql
+    assert "MIN(ss.cumulative_count) - 1000" in plan.sql
+    assert "CROSS JOIN candidate_profile cp" in plan.sql
+    assert "cp.candidate_rank IS NOT NULL" in plan.sql
+    assert "ar.min_rank BETWEEN GREATEST(1, cp.candidate_rank - 5000) AND cp.candidate_rank + 8000" in plan.sql
+    assert "cp.candidate_rank" in plan.sql
+    assert "confidence_band" in plan.sql
 
 
 def test_admission_feasibility_template_supports_major_filter() -> None:
@@ -81,6 +107,33 @@ def test_admission_feasibility_template_supports_score_gap() -> None:
     assert "580 AS candidate_score" in plan.sql
     assert "(580 - ar.min_score) AS score_gap" in plan.sql
     assert "优先建议使用位次评估" in plan.sql
+
+
+def test_score_filter_template_supports_school_province_filter() -> None:
+    plan = _plan("物理类 580分可以填报四川的哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "admission_search_lookup"
+    assert "LEFT JOIN school s ON s.name = ar.school_name" in plan.sql
+    assert "LEFT JOIN province p ON p.id = s.province_id" in plan.sql
+    assert "p.name ILIKE '%' || '四川' || '%'" in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "cp.candidate_rank" in plan.sql
+    assert "staging.score_segments" in plan.sql
+    assert "p.name AS province_name" in plan.sql
+
+
+def test_score_filter_template_supports_city_filter() -> None:
+    plan = _plan("物理类 580分可以填报成都的哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "admission_search_lookup"
+    assert "LEFT JOIN school s ON s.name = ar.school_name" in plan.sql
+    assert "s.city ILIKE '%' || '成都' || '%'" in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "cp.candidate_rank" in plan.sql
+    assert "staging.score_segments" in plan.sql
+    assert "s.city" in plan.sql
 
 
 def test_region_template_uses_school_and_province_only() -> None:
@@ -114,6 +167,68 @@ def test_multi_filter_template_supports_city_filter() -> None:
     assert plan.template_name == "multi_filter_lookup"
     assert "s.city ILIKE" in plan.sql
     assert "s.ownership = '公办'" in plan.sql
+
+
+def test_special_program_template_combines_school_major_subject_and_batch() -> None:
+    plan = _plan("北京语言大学 计算机类(民族班) 本科批 物理类 这个专业招多少人")
+
+    assert plan is not None
+    assert plan.template_name == "special_program_lookup"
+    assert "ar.admission_program ILIKE" in plan.sql
+    assert "'民族班'" in plan.sql
+    assert "ar.school_name ILIKE" in plan.sql
+    assert "'北京语言大学'" in plan.sql
+    assert "ar.major_name ILIKE" in plan.sql
+    assert "'计算机'" in plan.sql
+    assert "ar.subject_category = '物理类'" in plan.sql
+    assert "ar.batch = '本科批'" in plan.sql
+    assert "ar.enrollment_plan_count" in plan.sql
+
+
+def test_program_catalog_template_uses_2026_plan_catalog_table() -> None:
+    plan = _plan_2026("北京语言大学 计算机类(民族班) 本科批 物理类 这个专业招多少人")
+
+    assert plan is not None
+    assert plan.template_name == "program_catalog_lookup"
+    assert "FROM staging.program_catalog_records pc" in plan.sql
+    assert "pc.plan_year = 2026" in plan.sql
+    assert "pc.school_name ILIKE" in plan.sql
+    assert "'北京语言大学'" in plan.sql
+    assert "pc.major_name ILIKE" in plan.sql
+    assert "'计算机'" in plan.sql
+    assert "pc.subject_category = '物理类'" in plan.sql
+    assert "pc.education_level = '本科'" in plan.sql
+    assert "pc.enrollment_plan_count" in plan.sql
+    assert plan.data_sources == ("staging.program_catalog_records",)
+
+
+def test_program_catalog_template_strips_year_prefix_from_school_name() -> None:
+    plan = _plan_2026("2026年北京语言大学计算机类物理类招多少人")
+
+    assert plan is not None
+    assert "'北京语言大学'" in plan.sql
+    assert "'2026年北京语言大学'" not in plan.sql
+
+
+def test_program_catalog_template_strips_colloquial_prefix_from_school_name() -> None:
+    plan = _plan_2026("帮我查下今年贵州大学计算机系一共招多少人")
+
+    assert plan is not None
+    assert plan.template_name == "program_catalog_lookup"
+    assert "'贵州大学'" in plan.sql
+    assert "'下今年贵州大学'" not in plan.sql
+    assert "pc.major_name ILIKE" in plan.sql
+    assert "'计算机'" in plan.sql
+
+
+def test_program_catalog_template_extracts_department_as_major_keyword() -> None:
+    plan = _plan_2026("帮我看今年贵州大学数学系招几个")
+
+    assert plan is not None
+    assert plan.template_name == "program_catalog_lookup"
+    assert "'贵州大学'" in plan.sql
+    assert "pc.major_name ILIKE" in plan.sql
+    assert "'数学'" in plan.sql
 
 
 def test_selection_requirement_template_requires_school_or_major() -> None:

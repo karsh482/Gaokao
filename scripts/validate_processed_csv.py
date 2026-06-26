@@ -62,6 +62,38 @@ SCORE_SEGMENT_COLUMNS = {
     "source_column_index",
 }
 
+PROGRAM_CATALOG_COLUMNS = {
+    "record_number",
+    "exam_province",
+    "plan_year",
+    "dataset_type",
+    "subject_category",
+    "admission_track",
+    "education_level",
+    "batch",
+    "enrollment_type",
+    "school_code_in_exam_province",
+    "school_name",
+    "school_location",
+    "school_plan_count",
+    "major_code_in_exam_province",
+    "major_name",
+    "selection_requirements",
+    "enrollment_plan_count",
+    "language",
+    "duration",
+    "tuition",
+    "remarks",
+    "source_file_id",
+    "source_file_name",
+    "source_page",
+    "source_column",
+    "source_line_start",
+    "source_line_end",
+    "extraction_method",
+    "confidence",
+}
+
 SOURCE_FILES_COLUMNS = {
     "source_file_id",
     "source_file_name",
@@ -104,6 +136,7 @@ SCHOOLS_COLUMNS = {
 EXPECTED_COLUMNS = {
     "admission_records.csv": ADMISSION_COLUMNS,
     "score_segments.csv": SCORE_SEGMENT_COLUMNS,
+    "program_catalog_records.csv": PROGRAM_CATALOG_COLUMNS,
     "source_files.csv": SOURCE_FILES_COLUMNS,
     "provinces.csv": PROVINCES_COLUMNS,
     "schools.csv": SCHOOLS_COLUMNS,
@@ -120,8 +153,8 @@ def expected_columns_for(path: Path) -> set[str] | None:
     """根据文件名与所在目录决定应校验的列集合。
 
     source_files.csv 是溯源清单：master/ 下的主数据溯源与省份数据集溯源列结构不同，
-    真实业务数据在 admission_records.csv / score_segments.csv / schools.csv /
-    provinces.csv 中。
+    真实业务数据在 admission_records.csv / score_segments.csv /
+    program_catalog_records.csv / schools.csv / provinces.csv 中。
     """
 
     if path.name == "source_files.csv":

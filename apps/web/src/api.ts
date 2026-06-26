@@ -70,10 +70,16 @@ export type PolicyCitation = {
   table_title: string | null;
 };
 
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type QueryPayload = {
   question: string;
   exam_province?: string;
   plan_year?: number;
+  history?: ChatMessage[];
 };
 
 type PolicyPayload = {
@@ -89,27 +95,33 @@ type PolicyPayload = {
 export async function queryAdmission(
   payload: QueryPayload,
   apiKey: string,
+  gpuRentApiKey: string,
 ): Promise<QueryResponse> {
-  return requestJson<QueryResponse>("/query", payload, apiKey);
+  return requestJson<QueryResponse>("/query", payload, apiKey, gpuRentApiKey);
 }
 
 export async function queryPolicy(
   payload: PolicyPayload,
   apiKey: string,
+  gpuRentApiKey: string,
 ): Promise<PolicyQueryResponse> {
-  return requestJson<PolicyQueryResponse>("/policy/query", payload, apiKey);
+  return requestJson<PolicyQueryResponse>("/policy/query", payload, apiKey, gpuRentApiKey);
 }
 
 async function requestJson<T>(
   path: string,
   body: unknown,
   apiKey: string,
+  gpuRentApiKey: string,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json; charset=utf-8",
   };
   if (apiKey.trim()) {
     headers["X-API-Key"] = apiKey.trim();
+  }
+  if (gpuRentApiKey.trim()) {
+    headers["X-GPURent-API-Key"] = gpuRentApiKey.trim();
   }
 
   const response = await fetch(path, {

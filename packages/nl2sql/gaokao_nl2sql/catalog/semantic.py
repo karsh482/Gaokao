@@ -33,6 +33,7 @@ class CandidateProfile:
 
     rank: int | None = None
     score: int | None = None
+    rank_adjustment: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +43,7 @@ class QueryFilters:
     school_name: str | None = None
     major_name: str | None = None
     subject_category: str | None = None
+    school_province: str | None = None
     city: str | None = None
     ownership: str | None = None
     tuition_max: int | None = None
@@ -123,11 +125,13 @@ def frame_from_mapping(data: dict[str, Any]) -> SemanticFrame:
         candidate=CandidateProfile(
             rank=_optional_int(candidate.get("rank")),
             score=_optional_int(candidate.get("score")),
+            rank_adjustment=_optional_signed_int(candidate.get("rank_adjustment")),
         ),
         filters=QueryFilters(
             school_name=_optional_text(filters.get("school_name")),
             major_name=_optional_text(filters.get("major_name")),
             subject_category=_coerce_subject(filters.get("subject_category")),
+            school_province=_optional_text(filters.get("school_province")),
             city=_optional_text(filters.get("city")),
             ownership=_coerce_ownership(filters.get("ownership")),
             tuition_max=_optional_int(filters.get("tuition_max")),
@@ -215,6 +219,18 @@ def _optional_int(value: Any) -> int | None:
     return None
 
 
+def _optional_signed_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        normalized = value.replace(",", "").replace("，", "").strip()
+        if re.fullmatch(r"[+-]?\d+", normalized):
+            return int(normalized)
+    return None
+
+
 def _optional_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
@@ -245,12 +261,13 @@ _SYSTEM_PROMPT = """你是高考志愿系统的语义解析器。
   "task": "admission_search|admission_feasibility|school_detail|major_lookup|region_lookup|selection_requirement|special_program|generic",
   "exam_province": "贵州|null",
   "year": 2025,
-  "candidate": {"rank": 9500, "score": null},
+  "candidate": {"rank": 9500, "score": null, "rank_adjustment": null},
   "filters": {
     "school_name": "贵州大学|null",
     "major_name": "计算机类|null",
     "subject_category": "物理类|历史类|null",
-    "city": "贵阳|null",
+    "school_province": "四川|null",
+    "city": "成都|null",
     "ownership": "公办|民办|null",
     "tuition_max": 8000,
     "special_program": "国家专项|null",
@@ -263,6 +280,9 @@ _SYSTEM_PROMPT = """你是高考志愿系统的语义解析器。
 
 规则：
 - 查询“能上哪些大学/学校/院校/专业”属于 admission_search；没有目标学校时 school_name 为 null。
+- “排名/位次比去年高/提升/靠前 N 名”填 candidate.rank_adjustment=-N；“低/下降/靠后 N 名”填 +N。
+- “某省的学校/某省省内院校/填报某省的学校”表示院校所在地省份，填入 filters.school_province，不要填入 exam_province。
+- “某市的学校/某城市有哪些院校/填报某市的学校”表示院校所在城市，填入 filters.city。
 - 查询“能不能上某校/够不够某校某专业/稳不稳”属于 admission_feasibility。
 - 查询院校投档线、专业列表、基本信息属于 school_detail。
 - 查询某专业有哪些学校属于 major_lookup。

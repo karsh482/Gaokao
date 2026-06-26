@@ -15,6 +15,7 @@ class DataScope:
 
     available_provinces: frozenset[str]
     available_years: frozenset[int]
+    plan_catalog_years: frozenset[int]
     unavailable_metrics: frozenset[str]
     plan_catalog_loaded: bool
     policy_rag_enabled: bool
@@ -26,6 +27,10 @@ class DataScope:
     def is_year_available(self, year: int) -> bool:
         """年份是否在可用范围内。"""
         return year in self.available_years
+
+    def is_plan_catalog_year_available(self, year: int) -> bool:
+        """招生专业目录年份是否在可用范围内。"""
+        return self.plan_catalog_loaded and year in self.plan_catalog_years
 
     def is_metric_unavailable(self, metric: str) -> bool:
         """指标是否属于当前缺失指标集合。"""
@@ -46,8 +51,9 @@ class DataScopeRegistry:
         default_factory=lambda: DataScope(
             available_provinces=frozenset({"贵州"}),
             available_years=frozenset({2025}),
+            plan_catalog_years=frozenset({2026}),
             unavailable_metrics=DEFAULT_UNAVAILABLE_METRICS,
-            plan_catalog_loaded=False,
+            plan_catalog_loaded=True,
             policy_rag_enabled=False,
         )
     )

@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     llm_timeout: float = 60.0
     llm_intent_enabled: bool = True
 
+    # ai-gpurent-cli LLM_TEXT_CHAT 代理配置。API Key 可由 Web 请求头传入。
+    ai_gpurent_base_url: str = "http://127.0.0.1:8080"
+    ai_gpurent_api_key: str = ""
+    ai_gpurent_provider: str = "deepseek"
+    ai_gpurent_task_timeout_sec: int = 300
+    ai_gpurent_poll_timeout: float = 300.0
+    ai_gpurent_poll_interval: float = 1.0
+    ai_gpurent_http_timeout: float = 15.0
+
     # SQL 查询答案生成。默认开启；未配置 LLM Key 时会自动跳过。
     sql_answer_enabled: bool = True
     sql_answer_max_rows: int = 20

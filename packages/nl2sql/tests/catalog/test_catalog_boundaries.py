@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from gaokao_nl2sql.catalog.classifier import QueryCategory
 from gaokao_nl2sql.catalog.intent import IntentExtractor
 from gaokao_nl2sql.catalog.pipeline import CatalogPipeline
 from gaokao_nl2sql.catalog.semantic import frame_from_mapping
@@ -186,7 +187,7 @@ def test_admission_search_keeps_rank_first_sorting_and_scope_notes() -> None:
     assert result.row_count == 1
     assert result.template_name == "admission_search_lookup"
     assert executor.executed_sql is not None
-    assert "ar.min_rank >= 10000" in executor.executed_sql
+    assert "ar.min_rank BETWEEN GREATEST(1, 10000 - 5000) AND 10000 + 8000" in executor.executed_sql
     assert "order by abs(ar.min_rank - 10000)" in executor.executed_sql.lower()
     assert result.applied_filters["exam_province"] == "贵州"
     assert result.applied_filters["plan_year"] == 2025
@@ -310,10 +311,10 @@ def test_open_admission_search_returns_school_candidates() -> None:
 
     assert result.template_name == "admission_search_lookup"
     assert result.row_count == 1
-    assert result.summary.startswith("当前条件下共返回 1 条可参考录取记录")
+    assert result.summary.startswith("当前条件下共返回 1 条冲稳保参考记录")
     assert "第一条为 贵州大学 计算机类" in result.summary
     assert executor.executed_sql is not None
-    assert "ar.min_rank >= 9500" in executor.executed_sql
+    assert "ar.min_rank BETWEEN GREATEST(1, 9500 - 5000) AND 9500 + 8000" in executor.executed_sql
     assert "ar.school_name ILIKE" not in executor.executed_sql
     assert model.calls == 0
 
@@ -431,6 +432,197 @@ def test_multi_filter_template_does_not_call_llm_and_cites_sources() -> None:
     )
 
 
+def test_score_filter_by_school_province_cites_school_and_province_sources() -> None:
+    rows = [
+        {
+            "school_name": "四川大学",
+            "major_name": "计算机类",
+            "subject_category": "物理类",
+            "province_name": "四川省",
+            "city": "成都",
+            "min_score": 579,
+            "min_rank": 13000,
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("物理类 580分可以填报四川的哪些学校")
+
+    assert result.template_name == "admission_search_lookup"
+    assert result.row_count == 1
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "staging.score_segments" in executor.executed_sql
+    assert "cp.candidate_rank" in executor.executed_sql
+    assert "p.name ILIKE '%' || '四川' || '%'" in executor.executed_sql
+    assert tuple(c.source for c in result.citations) == (
+        "staging.admission_records",
+        "school",
+        "province",
+        "staging.score_segments",
+    )
+
+
+def test_program_catalog_query_uses_2026_plan_catalog_source() -> None:
+    rows = [
+        {
+            "school_name": "北京语言大学",
+            "major_name": "计算机类（民族班）",
+            "batch": "本科批",
+            "subject_category": "物理类",
+            "admission_track": "普通类",
+            "enrollment_type": "民族班",
+            "selection_requirements": "化学",
+            "enrollment_plan_count": 19,
+            "duration": "4年",
+            "tuition": "5000",
+            "source_page": 30,
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run(
+        "北京语言大学 计算机类(民族班) 本科批 物理类 这个专业招多少人",
+        plan_year=2026,
+    )
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.row_count == 1
+    assert result.summary.startswith("当前 2026 招生专业目录查询共返回 1 条计划记录")
+    assert "合计计划招生 19 人" in result.summary
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.program_catalog_records pc" in executor.executed_sql
+    assert "pc.plan_year = 2026" in executor.executed_sql
+    assert tuple(c.source for c in result.citations) == (
+        "staging.program_catalog_records",
+    )
+    assert result.citations[0].label == "招生专业目录/招生计划数据"
+
+
+def test_program_catalog_query_infers_explicit_year_from_question() -> None:
+    rows = [
+        {
+            "school_name": "北京语言大学",
+            "major_name": "计算机类",
+            "subject_category": "物理类",
+            "enrollment_plan_count": 8,
+        }
+    ]
+    pipeline, _, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("2026年北京语言大学计算机类物理类招多少人")
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.plan_year == 2026
+    assert executor.executed_sql is not None
+    assert "pc.plan_year = 2026" in executor.executed_sql
+
+
+def test_program_catalog_query_infers_current_year_from_question() -> None:
+    rows = [
+        {
+            "school_name": "贵州大学",
+            "major_name": "计算机类",
+            "subject_category": "物理类",
+            "enrollment_type": "地方专项计划",
+            "enrollment_plan_count": 10,
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("贵州大学计算机类(地方专项计划)今年计划招聘人数是多少？")
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.plan_year == 2026
+    assert result.category is QueryCategory.ENROLLMENT_PLAN
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.program_catalog_records pc" in executor.executed_sql
+    assert "pc.plan_year = 2026" in executor.executed_sql
+    assert "地方专项" in executor.executed_sql
+
+
+def test_program_catalog_query_text_year_overrides_default_request_year() -> None:
+    rows = [
+        {
+            "school_name": "贵州大学",
+            "major_name": "计算机科学与技术",
+            "subject_category": "物理类",
+            "enrollment_plan_count": 73,
+        },
+        {
+            "school_name": "贵州大学",
+            "major_name": "计算机科学与技术",
+            "subject_category": "物理类",
+            "enrollment_type": "国家专项计划",
+            "enrollment_plan_count": 12,
+        },
+        {
+            "school_name": "贵州大学",
+            "major_name": "计算机科学与技术",
+            "subject_category": "物理类",
+            "enrollment_type": "地方专项计划",
+            "enrollment_plan_count": 6,
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("帮我查下今年贵州大学计算机系一共招多少人", plan_year=2025)
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.plan_year == 2026
+    assert result.category is QueryCategory.ENROLLMENT_PLAN
+    assert result.summary.startswith("当前 2026 招生专业目录查询共返回 3 条计划记录")
+    assert "合计计划招生 91 人" in result.summary
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.program_catalog_records pc" in executor.executed_sql
+    assert "pc.plan_year = 2026" in executor.executed_sql
+    assert "pc.school_name ILIKE '%' || '贵州大学' || '%'" in executor.executed_sql
+    assert "pc.major_name ILIKE '%' || '计算机' || '%'" in executor.executed_sql
+    assert "下今年贵州大学" not in executor.executed_sql
+
+
+def test_program_catalog_query_uses_deterministic_plan_before_semantic_frame() -> None:
+    rows = [
+        {
+            "school_name": "贵州大学",
+            "major_name": "计算机科学与技术",
+            "subject_category": "物理类",
+            "enrollment_plan_count": 91,
+        }
+    ]
+    model = FakeModel("SELECT 1")
+    executor = FakeExecutor(rows)
+    semantic_extractor = FakeSemanticExtractor(
+        frame_from_mapping(
+            {
+                "route": "sql",
+                "task": "school_detail",
+                "year": 2025,
+                "filters": {"school_name": "贵州大学", "major_name": "计算机系"},
+            }
+        )
+    )
+    pipeline = CatalogPipeline(
+        nl2sql_pipeline=Nl2SqlPipeline(
+            generator=SqlGenerator(model=model),
+            executor=executor,
+        ),
+        semantic_extractor=semantic_extractor,
+    )
+
+    result = pipeline.run("帮我查下今年贵州大学计算机系一共招多少人", plan_year=2025)
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.plan_year == 2026
+    assert semantic_extractor.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.program_catalog_records pc" in executor.executed_sql
+    assert "pc.plan_year = 2026" in executor.executed_sql
+
+
 def test_semantic_frame_handles_open_admission_search_and_answer() -> None:
     rows = [
         {
@@ -476,7 +668,7 @@ def test_semantic_frame_handles_open_admission_search_and_answer() -> None:
     assert result.row_count == 1
     assert result.category.name == "SCORE_RANK_FILTER"
     assert executor.executed_sql is not None
-    assert "ar.min_rank >= 9500" in executor.executed_sql
+    assert "ar.min_rank BETWEEN GREATEST(1, 9500 - 5000) AND 9500 + 8000" in executor.executed_sql
     assert "LIMIT 10" in executor.executed_sql
     assert model.calls == 0
     assert semantic_extractor.calls == 1

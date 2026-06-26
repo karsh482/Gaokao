@@ -3,14 +3,23 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"] = Field(
+        ..., description="消息角色，仅支持 user / assistant"
+    )
+    content: str = Field(..., min_length=1, description="消息文本")
 
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, description="自然语言问题")
     exam_province: str | None = Field(default=None, description="考试/招生省份")
     plan_year: int | None = Field(default=None, description="招生年份")
+    history: list[ChatMessage] = Field(default_factory=list, description="前端维护的最近对话历史")
 
 
 class AvailabilityInfo(BaseModel):

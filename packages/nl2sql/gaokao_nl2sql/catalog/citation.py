@@ -41,6 +41,8 @@ _ADMISSION_FIELDS = {
     "source_page",
 }
 _SCORE_SEGMENT_FIELDS = {
+    "candidate_rank",
+    "candidate_score",
     "score",
     "score_label",
     "score_type",
@@ -48,6 +50,26 @@ _SCORE_SEGMENT_FIELDS = {
     "cumulative_count",
     "cumulative_ratio",
     "segment_name",
+}
+_PROGRAM_CATALOG_FIELDS = {
+    "record_number",
+    "school_name",
+    "school_location",
+    "school_plan_count",
+    "major_name",
+    "batch",
+    "subject_category",
+    "admission_track",
+    "enrollment_type",
+    "selection_requirements",
+    "enrollment_plan_count",
+    "language",
+    "duration",
+    "tuition",
+    "remarks",
+    "source_file_id",
+    "source_file_name",
+    "source_page",
 }
 _SCHOOL_FIELDS = {
     "school_code",
@@ -68,7 +90,7 @@ _CATEGORY_SOURCES: dict[QueryCategory, tuple[str, ...]] = {
     QueryCategory.COMPARE: ("staging.admission_records",),
     QueryCategory.STATS_RANK: ("staging.admission_records",),
     QueryCategory.SCORE_RANK_CONVERT: ("staging.score_segments",),
-    QueryCategory.ENROLLMENT_PLAN: ("staging.admission_records",),
+    QueryCategory.ENROLLMENT_PLAN: ("staging.program_catalog_records",),
     QueryCategory.SELECTION_REQ: ("staging.admission_records",),
     QueryCategory.SPECIAL_PROGRAM: ("staging.admission_records",),
     QueryCategory.MULTI_FILTER: ("staging.admission_records", "school"),
@@ -80,6 +102,7 @@ _CATEGORY_SOURCES: dict[QueryCategory, tuple[str, ...]] = {
 _SOURCE_LABELS = {
     "staging.admission_records": "投档录取数据",
     "staging.score_segments": "一分一段/分数段数据",
+    "staging.program_catalog_records": "招生专业目录/招生计划数据",
     "school": "院校主数据",
     "province": "省份主数据",
 }
@@ -97,6 +120,8 @@ def _fields_for_source(source: str, fields: frozenset[str]) -> tuple[str, ...]:
         known = fields & _ADMISSION_FIELDS
     elif source == "staging.score_segments":
         known = fields & _SCORE_SEGMENT_FIELDS
+    elif source == "staging.program_catalog_records":
+        known = fields & _PROGRAM_CATALOG_FIELDS
     elif source == "school":
         known = fields & _SCHOOL_FIELDS
     elif source == "province":
@@ -116,11 +141,16 @@ class CitationBuilder:
         category: QueryCategory,
         scope: QueryScope,
         rows: Sequence[Mapping[str, object]],
+        sources: Sequence[str] | None = None,
     ) -> tuple[Citation, ...]:
         fields = _row_fields(rows)
-        sources = _CATEGORY_SOURCES.get(category, ("staging.admission_records",))
+        citation_sources = (
+            tuple(sources)
+            if sources is not None
+            else _CATEGORY_SOURCES.get(category, ("staging.admission_records",))
+        )
         citations: list[Citation] = []
-        for source in sources:
+        for source in citation_sources:
             source_fields = _fields_for_source(source, fields)
             citations.append(
                 Citation(
@@ -140,4 +170,6 @@ class CitationBuilder:
             return "院校所在地来自院校主数据，不等同于考试/招生省份。"
         if source == "staging.score_segments":
             return "分数与位次换算基于同一省份、年份、科类口径的分数段数据。"
+        if source == "staging.program_catalog_records":
+            return "招生专业目录仅表示计划信息，不包含投档分、最低位次或录取概率。"
         return ""

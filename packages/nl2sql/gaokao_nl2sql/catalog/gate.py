@@ -83,8 +83,15 @@ class AvailabilityGate:
                 message = _build_message(reasons)
             return GateDecision(False, reasons, message)
 
-        # 2. 年份。
-        if not data_scope.is_year_available(scope.plan_year):
+        # 2. 年份。招生计划目录与投档事实是不同数据面，分别判断年份可用性。
+        if query.category is QueryCategory.ENROLLMENT_PLAN:
+            if not (
+                data_scope.is_year_available(scope.plan_year)
+                or data_scope.is_plan_catalog_year_available(scope.plan_year)
+            ):
+                reasons = (UnavailableReason.YEAR_OUT_OF_SCOPE,)
+                return GateDecision(False, reasons, _build_message(reasons))
+        elif not data_scope.is_year_available(scope.plan_year):
             reasons = (UnavailableReason.YEAR_OUT_OF_SCOPE,)
             return GateDecision(False, reasons, _build_message(reasons))
 
@@ -129,7 +136,8 @@ class AvailabilityGate:
         # 7. 计划目录维度未入库且请求整体依赖它。
         if (
             query.category is QueryCategory.ENROLLMENT_PLAN
-            and not data_scope.plan_catalog_loaded
+            and not data_scope.is_year_available(scope.plan_year)
+            and not data_scope.is_plan_catalog_year_available(scope.plan_year)
         ):
             reasons = (UnavailableReason.PLAN_CATALOG_REQUIRED,)
             return GateDecision(False, reasons, _build_message(reasons))

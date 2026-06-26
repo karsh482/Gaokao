@@ -1,17 +1,19 @@
 # Staging 数据导入说明
 
-本文说明如何把 `data/processed/guizhou/2025/` 中的公共 CSV 导入 PostgreSQL staging
+本文说明如何把 `data/processed/<province>/<year>/` 中的公共 CSV 导入 PostgreSQL staging
 表。staging 层只承接 CSV 原始业务字段，不生成 `school_id`、`major_id`，也不写入核心
 `admission_record` 表。
 
 ## 输入文件
 
-导入文件按“省份 / 年份”组织。每个数据集目录需要包含两个文件：
+导入文件按“省份 / 年份”组织。每个数据集目录需要包含 `source_files.csv`，并至少包含
+一种业务 CSV：
 
 ```text
 data/processed/<province>/<year>/source_files.csv
-data/processed/<province>/<year>/admission_records.csv
+data/processed/<province>/<year>/admission_records.csv        # 可选
 data/processed/<province>/<year>/score_segments.csv  # 可选
+data/processed/<province>/<year>/program_catalog_records.csv  # 可选
 ```
 
 示例：
@@ -20,17 +22,18 @@ data/processed/<province>/<year>/score_segments.csv  # 可选
 data/processed/guizhou/2025/source_files.csv
 data/processed/guizhou/2025/admission_records.csv
 data/processed/guizhou/2025/score_segments.csv
-data/processed/sichuan/2025/source_files.csv
-data/processed/sichuan/2025/admission_records.csv
+data/processed/guizhou/2026/source_files.csv
+data/processed/guizhou/2026/program_catalog_records.csv
 ```
 
-Docker 首次初始化时会扫描 `data/processed/*/*/`。只有同时存在 `source_files.csv` 和
-`admission_records.csv` 的目录才会自动导入；缺少任一文件的目录会被跳过。
-如果同目录存在 `score_segments.csv`，会在投档数据后自动导入 `staging.score_segments`。
+Docker 首次初始化时会扫描 `data/processed/*/*/`。存在 `source_files.csv` 且至少包含
+`admission_records.csv`、`score_segments.csv`、`program_catalog_records.csv` 之一的目录会
+自动导入；缺少来源清单或无业务 CSV 的目录会被跳过。
 
 当前 `guizhou/2025` 的 `admission_records.csv` 应包含 24643 条业务记录，
 `score_segments.csv` 应包含贵州 2025 普通类、艺术类、体育类分数段统计记录，
 `source_files.csv` 应包含投档表和分数段统计表的来源文件记录。
+`guizhou/2026` 可包含招生专业目录 / 招生计划数据 `program_catalog_records.csv`。
 
 ## 本地 Docker 数据库
 
@@ -71,7 +74,7 @@ packages/schema/003_seed_staging_data.sh
 因此新用户默认执行 `docker compose up --build` 即可拉起完整应用；如果只调试数据库，
 执行 `docker compose up -d gaokao-postgres` 即可完成核心表建表、staging 表建表、
 `data/processed/master/` 主数据导入和 `data/processed/*/*/`
-下完整招生事实数据集的自动导入。数据库容器内实际执行顺序由 `docker-compose.yml`
+下完整 staging 数据集的自动导入。数据库容器内实际执行顺序由 `docker-compose.yml`
 挂载到 `/docker-entrypoint-initdb.d/` 的文件名决定：主数据先导入，staging 数据后导入。
 
 默认本地连接串：

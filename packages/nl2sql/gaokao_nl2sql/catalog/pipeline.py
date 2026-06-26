@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import re
 from typing import Any
 
@@ -100,7 +101,9 @@ class CatalogPipeline:
         assert self.planner is not None
         assert self.coverage_registry is not None
 
-        scope = self.scope_resolver.resolve(exam_province, plan_year)
+        question_plan_year = _extract_explicit_year(question)
+        resolved_plan_year = question_plan_year if question_plan_year is not None else plan_year
+        scope = self.scope_resolver.resolve(exam_province, resolved_plan_year)
         classified = self.classifier.classify(question)
         request_provinces = self._request_provinces(
             scope.exam_province,
@@ -150,13 +153,21 @@ class CatalogPipeline:
                 template_name=None,
             )
 
-        frame = self._extract_semantic_frame(question, scope, classified)
-        if frame is not None:
-            classified = _category_for_frame(frame, classified)
-            intent = _intent_from_frame(frame)
-            plan = self.sql_compiler.compile(frame)
-        else:
+        plan = self.planner.plan(
+            question=question,
+            scope=scope,
+            query=classified,
+            intent=intent,
+        )
+        if plan is not None and plan.template_name != "program_catalog_lookup":
             plan = None
+
+        if plan is None:
+            frame = self._extract_semantic_frame(question, scope, classified)
+            if frame is not None:
+                classified = _category_for_frame(frame, classified)
+                intent = _intent_from_frame(frame)
+                plan = self.sql_compiler.compile(frame)
 
         if (
             plan is None
@@ -181,12 +192,14 @@ class CatalogPipeline:
             rows = self.nl2sql_pipeline.executor.run(safe_sql)
             sql = safe_sql
             template_name = plan.template_name
+            data_sources = plan.data_sources
         else:
             scoped_question = self._scoped_question(question, scope.exam_province, scope.plan_year)
             result = self.nl2sql_pipeline.run(scoped_question)
             rows = result.rows
             sql = result.sql
             template_name = None
+            data_sources = None
         annotation = self.annotator.annotate(
             scope=scope,
             decision=decision,
@@ -198,6 +211,7 @@ class CatalogPipeline:
             category=classified.category,
             scope=scope,
             rows=rows,
+            sources=data_sources,
         )
         coverage_warnings = self.coverage_registry.warnings_for(
             category=classified.category,
@@ -363,6 +377,19 @@ def _score_or_rank_hint(question: str) -> bool:
     return bool(re.search(r"\d+\s*(?:分|名|位)", question) or "位次" in question)
 
 
+def _extract_explicit_year(question: str) -> int | None:
+    match = re.search(r"(20\d{2})\s*年?", question)
+    if match is None:
+        if "今年" in question or "本年" in question:
+            return date.today().year
+        if "明年" in question:
+            return date.today().year + 1
+        if "去年" in question:
+            return date.today().year - 1
+        return None
+    return int(match.group(1))
+
+
 def _admission_target_hint(question: str) -> bool:
     return any(
         token in question
@@ -397,16 +424,20 @@ def _build_summary(
         has_major = _has_major_intent(question, intent)
         if template_name in {"admission_search_lookup", "semantic_admission_search"}:
             if first.get("candidate_rank") is not None:
+                band_counts = _confidence_band_counts(rows)
+                band_text = f"，包含{band_counts}" if band_counts else ""
                 return (
-                    f"当前条件下共返回 {len(rows)} 条可参考录取记录。"
-                    f"排序按最低位次从高到低，第一条为 {school} {major}，"
-                    f"2025 年最低位次 {first.get('min_rank')}。{note}"
+                    f"当前条件下共返回 {len(rows)} 条冲稳保参考记录{band_text}。"
+                    f"排序按与考生参考位次的接近程度，第一条为 {school} {major}，"
+                    f"2025 年最低位次 {first.get('min_rank')}，参考档位为“{band}”。{note}"
                 )
             if first.get("candidate_score") is not None:
+                band_counts = _confidence_band_counts(rows)
+                band_text = f"，包含{band_counts}" if band_counts else ""
                 return (
-                    f"当前条件下共返回 {len(rows)} 条可参考录取记录。"
-                    f"排序按最低位次从高到低，第一条为 {school} {major}，"
-                    f"2025 年最低分 {first.get('min_score')}。{note}"
+                    f"当前条件下共返回 {len(rows)} 条冲稳保参考记录{band_text}。"
+                    f"排序按与考生参考分数的接近程度，第一条为 {school} {major}，"
+                    f"2025 年最低分 {first.get('min_score')}，参考档位为“{band}”。{note}"
                 )
             return f"当前条件下共返回 {len(rows)} 条可参考录取记录。{note}"
         if first.get("candidate_rank") is not None and first.get("min_rank") is not None:
@@ -447,6 +478,18 @@ def _build_summary(
         return f"当前条件下共返回 {len(rows)} 条可参考记录，按最低位次从高到低排序。"
     if template_name == "multi_filter_lookup":
         return f"当前组合条件下共返回 {len(rows)} 条可参考记录。"
+    if template_name == "program_catalog_lookup":
+        first = rows[0]
+        school = first.get("school_name") or "目标院校"
+        major = first.get("major_name") or "相关专业"
+        plan_count = first.get("enrollment_plan_count")
+        total_plan_count = _sum_plan_counts(rows)
+        total_text = f"，合计计划招生 {total_plan_count} 人" if total_plan_count is not None else ""
+        count_text = f"，计划招生 {plan_count} 人" if plan_count not in (None, "") else ""
+        return (
+            f"当前 2026 招生专业目录查询共返回 {len(rows)} 条计划记录。"
+            f"第一条为 {school} {major}{count_text}{total_text}。"
+        )
     if template_name == "school_detail":
         return f"当前院校查询共返回 {len(rows)} 条专业/批次记录。"
     if template_name == "major_lookup":
@@ -465,3 +508,28 @@ def _has_major_intent(question: str, intent: AdmissionIntent | None) -> bool:
     if intent is not None and intent.is_actionable:
         return bool(intent.major_name)
     return _question_has_major_intent(question)
+
+
+def _confidence_band_counts(rows: list[dict[str, Any]]) -> str:
+    counts = {"冲": 0, "稳": 0, "保": 0}
+    for row in rows:
+        band = row.get("confidence_band")
+        if band in counts:
+            counts[band] += 1
+    parts = [f"{label}{count}条" for label, count in counts.items() if count]
+    return "、".join(parts)
+
+
+def _sum_plan_counts(rows: list[dict[str, Any]]) -> int | None:
+    total = 0
+    has_count = False
+    for row in rows:
+        value = row.get("enrollment_plan_count")
+        if value in (None, ""):
+            continue
+        try:
+            total += int(value)
+        except (TypeError, ValueError):
+            continue
+        has_count = True
+    return total if has_count else None

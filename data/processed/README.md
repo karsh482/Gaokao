@@ -16,14 +16,16 @@ processed/
       score_segments.csv
       source_files.csv
     2026/
+      program_catalog_records.csv
+      source_files.csv
   sichuan/
 ```
 
 ## 数据类型
 
 - `master/`：核心主数据。当前包含省份和教育部普通高校名单。
-- `<province>/<year>/`：招生事实和统计类 staging 数据。当前包含贵州 2025
-  普通类本科批历史类、物理类投档数据，以及普通类、艺术类、体育类分数段统计。
+- `<province>/<year>/`：staging 数据。当前包含贵州 2025 普通类本科批历史类、物理类
+  投档数据，普通类、艺术类、体育类分数段统计，以及贵州 2026 招生专业目录 / 招生计划。
 
 ## 导入顺序
 

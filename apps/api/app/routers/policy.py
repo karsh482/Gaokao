@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from gaokao_rag import PolicyRagError, PolicyRagPipeline
 
-from app.dependencies import get_policy_rag_pipeline, require_api_key
+from app.dependencies import get_policy_rag_pipeline_for_request, require_api_key
 from app.models import PolicyQueryRequest, PolicyQueryResponse
 
 router = APIRouter(tags=["policy"])
@@ -19,7 +19,7 @@ router = APIRouter(tags=["policy"])
 )
 def policy_query(
     request: PolicyQueryRequest,
-    pipeline: PolicyRagPipeline = Depends(get_policy_rag_pipeline),
+    pipeline: PolicyRagPipeline = Depends(get_policy_rag_pipeline_for_request),
 ) -> PolicyQueryResponse:
     try:
         result = pipeline.query(

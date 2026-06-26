@@ -15,8 +15,10 @@ def test_default_available_provinces():
 def test_default_available_years():
     scope = DataScopeRegistry().current()
     assert scope.available_years == frozenset({2025})
+    assert scope.plan_catalog_years == frozenset({2026})
     assert scope.is_year_available(2025)
     assert not scope.is_year_available(2024)
+    assert scope.is_plan_catalog_year_available(2026)
 
 
 def test_default_unavailable_metrics():
@@ -28,5 +30,5 @@ def test_default_unavailable_metrics():
 
 def test_default_flags_off():
     scope = DataScopeRegistry().current()
-    assert scope.plan_catalog_loaded is False
+    assert scope.plan_catalog_loaded is True
     assert scope.policy_rag_enabled is False

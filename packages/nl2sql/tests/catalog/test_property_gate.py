@@ -140,6 +140,31 @@ def test_gate_marks_plan_catalog_required_without_numbers() -> None:
         data_scope,
     )
 
+    assert decision.allowed is True
+    assert decision.reasons == ()
+
+
+def test_gate_allows_loaded_plan_catalog_year() -> None:
+    gate = AvailabilityGate()
+    data_scope = DataScopeRegistry().current()
+    decision = gate.evaluate(
+        _scope(year=2026),
+        ClassifiedQuery(QueryCategory.ENROLLMENT_PLAN, frozenset()),
+        data_scope,
+    )
+
+    assert decision.allowed is True
+    assert decision.reasons == ()
+
+
+def test_gate_rejects_non_catalog_query_for_plan_catalog_only_year() -> None:
+    gate = AvailabilityGate()
+    data_scope = DataScopeRegistry().current()
+    decision = gate.evaluate(
+        _scope(year=2026),
+        ClassifiedQuery(QueryCategory.SCORE_RANK_FILTER, frozenset()),
+        data_scope,
+    )
+
     assert decision.allowed is False
-    assert decision.reasons == (UnavailableReason.PLAN_CATALOG_REQUIRED,)
-    assert "招生计划目录数据" in decision.message or "招生计划" in decision.message
+    assert decision.reasons == (UnavailableReason.YEAR_OUT_OF_SCOPE,)

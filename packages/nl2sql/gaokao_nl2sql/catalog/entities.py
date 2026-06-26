@@ -12,6 +12,65 @@ from gaokao_nl2sql.catalog.semantic import (
     SemanticFrame,
 )
 
+_PROVINCE_NAMES = {
+    "四川",
+    "四川省",
+    "云南",
+    "云南省",
+    "重庆",
+    "重庆市",
+    "北京",
+    "北京市",
+    "上海",
+    "上海市",
+    "广东",
+    "广东省",
+    "广西",
+    "广西壮族自治区",
+    "湖南",
+    "湖南省",
+    "湖北",
+    "湖北省",
+    "河南",
+    "河南省",
+    "河北",
+    "河北省",
+    "山东",
+    "山东省",
+    "山西",
+    "山西省",
+    "陕西",
+    "陕西省",
+    "江苏",
+    "江苏省",
+    "浙江",
+    "浙江省",
+    "安徽",
+    "安徽省",
+    "福建",
+    "福建省",
+    "江西",
+    "江西省",
+    "辽宁",
+    "辽宁省",
+    "吉林",
+    "吉林省",
+    "黑龙江",
+    "黑龙江省",
+    "内蒙古",
+    "宁夏",
+    "青海",
+    "青海省",
+    "甘肃",
+    "甘肃省",
+    "新疆",
+    "西藏",
+    "海南",
+    "海南省",
+    "天津",
+    "天津市",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class EntityResolver:
@@ -27,6 +86,11 @@ class EntityResolver:
             subject_category = "物理类"
         elif subject_category == "历史":
             subject_category = "历史类"
+        school_province = _clean_text(filters.school_province)
+        city = _clean_text(filters.city)
+        if school_province is None and city in _PROVINCE_NAMES:
+            school_province = city.removesuffix("省").removesuffix("市")
+            city = None
 
         return SemanticFrame(
             route=frame.route,
@@ -36,12 +100,14 @@ class EntityResolver:
             candidate=CandidateProfile(
                 rank=frame.candidate.rank,
                 score=frame.candidate.score,
+                rank_adjustment=frame.candidate.rank_adjustment,
             ),
             filters=QueryFilters(
                 school_name=_clean_text(filters.school_name),
                 major_name=_clean_text(filters.major_name),
                 subject_category=subject_category,
-                city=_clean_text(filters.city),
+                school_province=school_province,
+                city=city,
                 ownership=filters.ownership,
                 tuition_max=filters.tuition_max,
                 special_program=_clean_text(filters.special_program),

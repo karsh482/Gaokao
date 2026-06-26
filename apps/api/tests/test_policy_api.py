@@ -23,12 +23,14 @@ from gaokao_nl2sql import (
 
 from app.config import Settings
 from app.dependencies import (
+    _build_ai_gpurent_model,
     _build_answer_generator,
     _build_embedding_provider,
     _build_intent_extractor,
     _build_semantic_extractor,
     _build_sql_answer_synthesizer,
 )
+from app.llm_clients import AIGPURentLLMTextModel, ChatModelRagAnswerGenerator
 from app.models import PolicyQueryRequest
 from app.routers.policy import policy_query
 
@@ -66,6 +68,11 @@ class FakePolicyRagPipeline:
         if self._error:
             raise self._error
         return self._result
+
+
+class FakeChatModel:
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        return "ok"
 
 
 def test_policy_query_happy_path():
@@ -243,6 +250,45 @@ def test_build_answer_generator_uses_llm_settings():
     assert generator.max_context_chars == 3456
 
 
+def test_build_ai_gpurent_model_uses_request_api_key() -> None:
+    model = _build_ai_gpurent_model(
+        Settings(
+            ai_gpurent_base_url="http://gpurent.local",
+            ai_gpurent_api_key="env-key",
+            ai_gpurent_provider="deepseek",
+            ai_gpurent_task_timeout_sec=120,
+            ai_gpurent_poll_timeout=45,
+            ai_gpurent_poll_interval=0.2,
+            ai_gpurent_http_timeout=7,
+        ),
+        "request-key",
+    )
+
+    assert isinstance(model, AIGPURentLLMTextModel)
+    assert model.base_url == "http://gpurent.local"
+    assert model.api_key == "request-key"
+    assert model.provider == "deepseek"
+    assert model.task_timeout_sec == 120
+    assert model.poll_timeout == 45
+    assert model.poll_interval == 0.2
+    assert model.http_timeout == 7
+
+
+def test_build_answer_generator_supports_request_level_chat_model() -> None:
+    generator = _build_answer_generator(
+        Settings(
+            rag_answer_enabled=True,
+            llm_api_key="",
+            rag_answer_max_context_chars=3456,
+        ),
+        model=FakeChatModel(),
+        llm_enabled=True,
+    )
+
+    assert isinstance(generator, ChatModelRagAnswerGenerator)
+    assert generator.max_context_chars == 3456
+
+
 def test_build_intent_extractor_requires_key_and_enabled_flag():
     model = OpenAICompatibleModel(
         base_url="https://example.test",
@@ -260,6 +306,18 @@ def test_build_intent_extractor_requires_key_and_enabled_flag():
     )
 
     extractor = _build_intent_extractor(Settings(llm_api_key="secret"), model)
+
+    assert isinstance(extractor, IntentExtractor)
+
+
+def test_build_intent_extractor_accepts_request_level_llm_without_env_key():
+    model = OpenAICompatibleModel(
+        base_url="https://example.test",
+        api_key="unused",
+        model="test-chat",
+    )
+
+    extractor = _build_intent_extractor(Settings(llm_api_key=""), model, llm_enabled=True)
 
     assert isinstance(extractor, IntentExtractor)
 

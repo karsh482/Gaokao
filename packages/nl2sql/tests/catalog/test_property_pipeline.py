@@ -82,7 +82,7 @@ def test_template_hit_never_calls_llm_but_executes_sql() -> None:
     assert result.availability.available is True
     assert result.template_name == "admission_search_lookup"
     assert result.sql is not None
-    assert "min_rank >= 10000" in result.sql
+    assert "min_rank BETWEEN GREATEST(1, 10000 - 5000) AND 10000 + 8000" in result.sql
     assert model.calls == 0
     assert executor.calls == 1
 
