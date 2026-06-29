@@ -33,6 +33,10 @@ def classifier() -> QueryClassifier:
         ("帮我查下今年贵州大学计算机系一共招多少人", QueryCategory.ENROLLMENT_PLAN),
         ("帮我查下今年贵州大学数学系一共招几人", QueryCategory.ENROLLMENT_PLAN),
         ("帮我看今年贵州大学数学系招几个", QueryCategory.ENROLLMENT_PLAN),
+        ("2026年贵州大学招收哪些专业", QueryCategory.ENROLLMENT_PLAN),
+        ("2026年贵州大学的专业有哪些", QueryCategory.ENROLLMENT_PLAN),
+        ("贵州大学2026年法学专业招生人数是否有变化", QueryCategory.ENROLLMENT_PLAN),
+        ("贵州大学法学专业比2025年多招了吗", QueryCategory.ENROLLMENT_PLAN),
         ("我这个位次冲稳保怎么填", QueryCategory.ADMISSION_PROBABILITY),
         ("平行志愿是什么意思", QueryCategory.POLICY_EXPLAIN),
         ("按录取均分给大学排名", QueryCategory.STATS_RANK),
@@ -61,6 +65,15 @@ def test_requested_metrics_extracted(classifier: QueryClassifier) -> None:
 def test_metric_synonyms_normalized(classifier: QueryClassifier) -> None:
     result = classifier.classify("各校平均分是多少")
     assert result.requested_metrics == frozenset({"录取均分"})
+
+
+def test_enrollment_plan_question_does_not_treat_plan_count_as_admitted_count(
+    classifier: QueryClassifier,
+) -> None:
+    result = classifier.classify("2026贵州大学招几个")
+
+    assert result.category is QueryCategory.ENROLLMENT_PLAN
+    assert "实际录取人数" not in result.requested_metrics
 
 
 def test_generic_fallback(classifier: QueryClassifier) -> None:

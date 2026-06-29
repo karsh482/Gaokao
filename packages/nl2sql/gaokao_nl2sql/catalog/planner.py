@@ -106,6 +106,31 @@ _PROGRAM_CATALOG_KEYWORDS = (
     "科目要求",
     "学制",
 )
+_PROGRAM_LIST_KEYWORDS = (
+    "有哪些专业",
+    "专业有哪些",
+    "招收哪些专业",
+    "招哪些专业",
+    "开设哪些专业",
+    "开设什么专业",
+    "招什么专业",
+)
+_PLAN_CHANGE_KEYWORDS = (
+    "是否有变化",
+    "有没有变化",
+    "有变化吗",
+    "变化",
+    "变了吗",
+    "对比",
+    "比较",
+    "比去年",
+    "比2025",
+    "比 2025",
+    "增加",
+    "减少",
+    "多招",
+    "少招",
+)
 _RUSH_RANK_WINDOW = 5_000
 _SECURE_RANK_WINDOW = 8_000
 _SCORE_WINDOW = 20
@@ -290,6 +315,8 @@ def _extract_major_keyword(
     *,
     allow_generic_major: bool = True,
 ) -> str | None:
+    if _is_school_program_list_question(question):
+        return None
     if "计算机" in question:
         return "计算机"
     if "临床医学" in question:
@@ -322,10 +349,28 @@ def _extract_special_program(question: str) -> str | None:
     return None
 
 
+def _is_school_program_list_question(question: str) -> bool:
+    return _extract_school(question) is not None and any(
+        keyword in question for keyword in _PROGRAM_LIST_KEYWORDS
+    )
+
+
 def _is_program_catalog_question(question: str, scope: QueryScope, query: ClassifiedQuery) -> bool:
     if scope.plan_year == 2026 and any(keyword in question for keyword in _PROGRAM_CATALOG_KEYWORDS):
         return True
     return query.category in {QueryCategory.ENROLLMENT_PLAN, QueryCategory.SELECTION_REQ} and scope.plan_year == 2026
+
+
+def _is_plan_change_question(question: str, query: ClassifiedQuery) -> bool:
+    if query.category is not QueryCategory.ENROLLMENT_PLAN:
+        return False
+    has_change_signal = any(keyword in question for keyword in _PLAN_CHANGE_KEYWORDS)
+    if not has_change_signal:
+        return False
+    has_plan_signal = any(keyword in question for keyword in _PROGRAM_CATALOG_KEYWORDS) or (
+        "专业" in question and any(keyword in question for keyword in ("招", "招生"))
+    )
+    return has_plan_signal and _extract_school(question) is not None
 
 
 @dataclass(frozen=True)
@@ -340,6 +385,9 @@ class QueryPlanner:
         query: ClassifiedQuery,
         intent: AdmissionIntent | None = None,
     ) -> QueryPlan | None:
+        plan_change = self._program_plan_change_plan(question, scope, query)
+        if plan_change is not None:
+            return plan_change
         program_catalog_plan = self._program_catalog_plan(question, scope, query)
         if program_catalog_plan is not None:
             return program_catalog_plan
@@ -425,7 +473,9 @@ SELECT
   pc.remarks,
   pc.school_location,
   pc.source_file_name,
-  pc.source_page
+  pc.source_page,
+  COUNT(*) OVER () AS matched_record_count,
+  SUM(pc.enrollment_plan_count) OVER () AS matched_enrollment_plan_count
 FROM staging.program_catalog_records pc
 WHERE {" AND ".join(filters)}
 ORDER BY pc.school_name ASC, pc.major_name ASC, pc.source_page ASC
@@ -434,6 +484,118 @@ ORDER BY pc.school_name ASC, pc.major_name ASC, pc.source_page ASC
             sql=sql,
             template_name="program_catalog_lookup",
             data_sources=("staging.program_catalog_records",),
+        )
+
+    def _program_plan_change_plan(
+        self,
+        question: str,
+        scope: QueryScope,
+        query: ClassifiedQuery,
+    ) -> QueryPlan | None:
+        if not _is_plan_change_question(question, query):
+            return None
+
+        school = _extract_school(question)
+        if school is None:
+            return None
+        major = _extract_major_keyword(question)
+        subject_category = "物理类" if "物理类" in question else "历史类" if "历史类" in question else None
+        special_program = _extract_special_program(question)
+
+        filters_2025 = [
+            f"exam_province = {_sql_literal(scope.exam_province)}",
+            "plan_year = 2025",
+            f"school_name ILIKE '%' || {_sql_literal(school)} || '%'",
+        ]
+        filters_2026 = [
+            f"exam_province = {_sql_literal(scope.exam_province)}",
+            "plan_year = 2026",
+            f"school_name ILIKE '%' || {_sql_literal(school)} || '%'",
+        ]
+        if major is not None:
+            filters_2025.append(f"major_name ILIKE '%' || {_sql_literal(major)} || '%'")
+            filters_2026.append(f"major_name ILIKE '%' || {_sql_literal(major)} || '%'")
+        if subject_category is not None:
+            filters_2025.append(f"subject_category = {_sql_literal(subject_category)}")
+            filters_2026.append(f"subject_category = {_sql_literal(subject_category)}")
+        if special_program is not None:
+            special = _sql_literal(special_program)
+            filters_2025.append(
+                "("
+                f"enrollment_type ILIKE '%' || {special} || '%' "
+                "OR "
+                f"admission_program ILIKE '%' || {special} || '%'"
+                ")"
+            )
+            filters_2026.append(
+                "("
+                f"enrollment_type ILIKE '%' || {special} || '%' "
+                "OR "
+                f"major_name ILIKE '%' || {special} || '%' "
+                "OR "
+                f"remarks ILIKE '%' || {special} || '%'"
+                ")"
+            )
+        if "本科" in question:
+            filters_2026.append("education_level = '本科'")
+        if "专科" in question or "高职" in question:
+            filters_2026.append("education_level = '高职（专科）'")
+
+        sql = f"""
+WITH y2025 AS (
+  SELECT
+    school_name,
+    major_name,
+    subject_category,
+    SUM(enrollment_plan_count) AS plan_count_2025,
+    COUNT(*) AS record_count_2025
+  FROM staging.admission_records
+  WHERE {" AND ".join(filters_2025)}
+  GROUP BY school_name, major_name, subject_category
+),
+y2026 AS (
+  SELECT
+    school_name,
+    major_name,
+    subject_category,
+    SUM(enrollment_plan_count) AS plan_count_2026,
+    COUNT(*) AS record_count_2026
+  FROM staging.program_catalog_records
+  WHERE {" AND ".join(filters_2026)}
+  GROUP BY school_name, major_name, subject_category
+)
+SELECT
+  COALESCE(y2026.school_name, y2025.school_name) AS school_name,
+  COALESCE(y2026.major_name, y2025.major_name) AS major_name,
+  COALESCE(y2026.subject_category, y2025.subject_category) AS subject_category,
+  y2025.plan_count_2025,
+  y2026.plan_count_2026,
+  (COALESCE(y2026.plan_count_2026, 0) - COALESCE(y2025.plan_count_2025, 0)) AS plan_count_change,
+  CASE
+    WHEN y2025.plan_count_2025 IS NULL THEN '2026新增'
+    WHEN y2026.plan_count_2026 IS NULL THEN '2026未见'
+    WHEN y2026.plan_count_2026 > y2025.plan_count_2025 THEN '增加'
+    WHEN y2026.plan_count_2026 < y2025.plan_count_2025 THEN '减少'
+    ELSE '持平'
+  END AS change_type,
+  y2025.record_count_2025,
+  y2026.record_count_2026,
+  '按院校、专业名称、科类聚合匹配；批次和招生类型未强制一致' AS comparison_note
+FROM y2025
+FULL JOIN y2026 USING (school_name, major_name, subject_category)
+ORDER BY
+  ABS(COALESCE(y2026.plan_count_2026, 0) - COALESCE(y2025.plan_count_2025, 0)) DESC,
+  school_name ASC,
+  major_name ASC,
+  subject_category ASC
+"""
+        return QueryPlan(
+            sql=sql,
+            template_name="program_plan_change_lookup",
+            data_sources=(
+                "staging.admission_records",
+                "staging.program_catalog_records",
+            ),
         )
 
     def _admission_plan(

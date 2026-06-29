@@ -105,6 +105,15 @@ class CatalogPipeline:
         resolved_plan_year = question_plan_year if question_plan_year is not None else plan_year
         scope = self.scope_resolver.resolve(exam_province, resolved_plan_year)
         classified = self.classifier.classify(question)
+        if (
+            classified.category is QueryCategory.ENROLLMENT_PLAN
+            and question_plan_year is None
+            and plan_year is None
+            and not self.data_scope.is_plan_catalog_year_available(scope.plan_year)
+        ):
+            catalog_year = _default_plan_catalog_year(self.data_scope)
+            if catalog_year is not None:
+                scope = self.scope_resolver.resolve(exam_province, catalog_year)
         request_provinces = self._request_provinces(
             scope.exam_province,
             exam_province,
@@ -390,6 +399,14 @@ def _extract_explicit_year(question: str) -> int | None:
     return int(match.group(1))
 
 
+def _default_plan_catalog_year(data_scope: DataScope) -> int | None:
+    """未显式指定年份的招生目录查询，使用当前已登记的最新目录年份。"""
+
+    if not data_scope.plan_catalog_loaded or not data_scope.plan_catalog_years:
+        return None
+    return max(data_scope.plan_catalog_years)
+
+
 def _admission_target_hint(question: str) -> bool:
     return any(
         token in question
@@ -478,16 +495,35 @@ def _build_summary(
         return f"当前条件下共返回 {len(rows)} 条可参考记录，按最低位次从高到低排序。"
     if template_name == "multi_filter_lookup":
         return f"当前组合条件下共返回 {len(rows)} 条可参考记录。"
+    if template_name == "program_plan_change_lookup":
+        first = rows[0]
+        school = first.get("school_name") or "目标院校"
+        major = first.get("major_name") or "相关专业"
+        subject = first.get("subject_category") or "未限定科类"
+        plan_2025 = _display_count(first.get("plan_count_2025"))
+        plan_2026 = _display_count(first.get("plan_count_2026"))
+        change = _int_or_none(first.get("plan_count_change"))
+        change_text = "无法计算变化" if change is None else f"{change:+d} 人"
+        change_type = first.get("change_type") or "变化未知"
+        note = first.get("comparison_note") or "按院校、专业名称、科类聚合匹配。"
+        return (
+            f"招生计划对比：{school} {major}（{subject}）2025 年计划 {plan_2025}，"
+            f"2026 年计划 {plan_2026}，变化 {change_text}，结论为“{change_type}”。"
+            f"{note}"
+        )
     if template_name == "program_catalog_lookup":
         first = rows[0]
         school = first.get("school_name") or "目标院校"
         major = first.get("major_name") or "相关专业"
         plan_count = first.get("enrollment_plan_count")
-        total_plan_count = _sum_plan_counts(rows)
+        matched_record_count = _int_or_none(first.get("matched_record_count")) or len(rows)
+        total_plan_count = _int_or_none(first.get("matched_enrollment_plan_count"))
+        if total_plan_count is None:
+            total_plan_count = _sum_plan_counts(rows)
         total_text = f"，合计计划招生 {total_plan_count} 人" if total_plan_count is not None else ""
         count_text = f"，计划招生 {plan_count} 人" if plan_count not in (None, "") else ""
         return (
-            f"当前 2026 招生专业目录查询共返回 {len(rows)} 条计划记录。"
+            f"当前 2026 招生专业目录查询共匹配 {matched_record_count} 条计划记录。"
             f"第一条为 {school} {major}{count_text}{total_text}。"
         )
     if template_name == "school_detail":
@@ -533,3 +569,17 @@ def _sum_plan_counts(rows: list[dict[str, Any]]) -> int | None:
             continue
         has_count = True
     return total if has_count else None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _display_count(value: Any) -> str:
+    count = _int_or_none(value)
+    return "暂无匹配" if count is None else f"{count} 人"

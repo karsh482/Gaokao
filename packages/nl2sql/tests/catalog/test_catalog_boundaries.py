@@ -477,6 +477,8 @@ def test_program_catalog_query_uses_2026_plan_catalog_source() -> None:
             "duration": "4年",
             "tuition": "5000",
             "source_page": 30,
+            "matched_record_count": 242,
+            "matched_enrollment_plan_count": 5992,
         }
     ]
     pipeline, model, executor = _pipeline("SELECT 1", rows)
@@ -488,8 +490,8 @@ def test_program_catalog_query_uses_2026_plan_catalog_source() -> None:
 
     assert result.template_name == "program_catalog_lookup"
     assert result.row_count == 1
-    assert result.summary.startswith("当前 2026 招生专业目录查询共返回 1 条计划记录")
-    assert "合计计划招生 19 人" in result.summary
+    assert result.summary.startswith("当前 2026 招生专业目录查询共匹配 242 条计划记录")
+    assert "合计计划招生 5992 人" in result.summary
     assert model.calls == 0
     assert executor.executed_sql is not None
     assert "FROM staging.program_catalog_records pc" in executor.executed_sql
@@ -517,6 +519,68 @@ def test_program_catalog_query_infers_explicit_year_from_question() -> None:
     assert result.plan_year == 2026
     assert executor.executed_sql is not None
     assert "pc.plan_year = 2026" in executor.executed_sql
+
+
+def test_program_catalog_query_defaults_to_loaded_catalog_year_without_request_year() -> None:
+    rows = [
+        {
+            "school_name": "贵州大学",
+            "major_name": "法学",
+            "subject_category": "历史类",
+            "enrollment_plan_count": 32,
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("贵州大学的专业有哪些")
+
+    assert result.template_name == "program_catalog_lookup"
+    assert result.plan_year == 2026
+    assert result.category is QueryCategory.ENROLLMENT_PLAN
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.program_catalog_records pc" in executor.executed_sql
+    assert "pc.plan_year = 2026" in executor.executed_sql
+    assert "pc.school_name ILIKE '%' || '贵州大学' || '%'" in executor.executed_sql
+
+
+def test_program_plan_change_query_summarizes_2025_2026_delta() -> None:
+    rows = [
+        {
+            "school_name": "贵州大学",
+            "major_name": "法学",
+            "subject_category": "物理类",
+            "plan_count_2025": 18,
+            "plan_count_2026": 23,
+            "plan_count_change": 5,
+            "change_type": "增加",
+            "record_count_2025": 1,
+            "record_count_2026": 1,
+            "comparison_note": "按院校、专业名称、科类聚合匹配；批次和招生类型未强制一致",
+        }
+    ]
+    pipeline, model, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run("贵州大学法学专业物理类2026比2025招生人数有变化吗")
+
+    assert result.template_name == "program_plan_change_lookup"
+    assert result.plan_year == 2026
+    assert result.row_count == 1
+    assert result.summary.startswith(
+        "招生计划对比：贵州大学 法学（物理类）2025 年计划 18 人，"
+    )
+    assert "2026 年计划 23 人" in result.summary
+    assert "变化 +5 人" in result.summary
+    assert "结论为“增加”" in result.summary
+    assert "批次和招生类型未强制一致" in result.summary
+    assert model.calls == 0
+    assert executor.executed_sql is not None
+    assert "FROM staging.admission_records" in executor.executed_sql
+    assert "FROM staging.program_catalog_records" in executor.executed_sql
+    assert tuple(c.source for c in result.citations) == (
+        "staging.admission_records",
+        "staging.program_catalog_records",
+    )
 
 
 def test_program_catalog_query_infers_current_year_from_question() -> None:
@@ -573,7 +637,7 @@ def test_program_catalog_query_text_year_overrides_default_request_year() -> Non
     assert result.template_name == "program_catalog_lookup"
     assert result.plan_year == 2026
     assert result.category is QueryCategory.ENROLLMENT_PLAN
-    assert result.summary.startswith("当前 2026 招生专业目录查询共返回 3 条计划记录")
+    assert result.summary.startswith("当前 2026 招生专业目录查询共匹配 3 条计划记录")
     assert "合计计划招生 91 人" in result.summary
     assert model.calls == 0
     assert executor.executed_sql is not None

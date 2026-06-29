@@ -105,6 +105,31 @@ _ENROLLMENT_KEYWORDS = (
     "计划招聘人数",
     "招聘人数",
 )
+_PROGRAM_LIST_KEYWORDS = (
+    "有哪些专业",
+    "专业有哪些",
+    "招收哪些专业",
+    "招哪些专业",
+    "开设哪些专业",
+    "开设什么专业",
+    "招什么专业",
+)
+_PLAN_CHANGE_KEYWORDS = (
+    "是否有变化",
+    "有没有变化",
+    "有变化吗",
+    "变化",
+    "变了吗",
+    "对比",
+    "比较",
+    "比去年",
+    "比2025",
+    "比 2025",
+    "增加",
+    "减少",
+    "多招",
+    "少招",
+)
 _STATS_KEYWORDS = ("排名", "排行", "统计", "最高", "最低", "平均", "数量最多", "前几", "排序")
 _COMPARE_KEYWORDS = ("对比", "比较", "哪个更", "和", "与", "vs", "相比", "谁更")
 _MAJOR_KEYWORDS = ("专业", "学科", "院系")
@@ -144,6 +169,7 @@ _PROVINCE_KEYWORDS = (
     "天津",
 )
 _EXACT_PROBABILITY_KEYWORDS = ("概率", "几率", "录取可能")
+_SPECIFIC_SCHOOL_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,30}(?:大学|学院|学校))")
 
 
 def _extract_metrics(question: str) -> frozenset[str]:
@@ -197,6 +223,34 @@ def _count_filter_dimensions(question: str) -> int:
     return dimensions
 
 
+def _mentions_specific_school(question: str) -> bool:
+    """判断问题中是否出现具体院校名，避免把“有哪些学校”误判成院校名。"""
+    for match in _SPECIFIC_SCHOOL_PATTERN.finditer(question):
+        school = match.group(1)
+        if any(token in school for token in ("哪些", "什么", "哪所", "哪几所")):
+            continue
+        return True
+    return False
+
+
+def _looks_like_program_list_question(question: str) -> bool:
+    """“某校有哪些/招哪些专业”应走招生专业目录，而不是 2025 投档专业检索。"""
+    return _mentions_specific_school(question) and any(
+        keyword in question for keyword in _PROGRAM_LIST_KEYWORDS
+    )
+
+
+def _looks_like_plan_change_question(question: str) -> bool:
+    """招生计划人数变化类问题需要跨 2025/2026 两张表对比。"""
+    if not _mentions_specific_school(question):
+        return False
+    has_plan_signal = any(keyword in question for keyword in _ENROLLMENT_KEYWORDS) or (
+        "专业" in question and any(keyword in question for keyword in ("招", "招生"))
+    )
+    has_change_signal = any(keyword in question for keyword in _PLAN_CHANGE_KEYWORDS)
+    return has_plan_signal and has_change_signal
+
+
 @dataclass(frozen=True)
 class QueryClassifier:
     """基于关键词/意图标志位的查询分类器。"""
@@ -205,6 +259,10 @@ class QueryClassifier:
         metrics = _extract_metrics(question)
         provinces = _extract_provinces(question)
         category = self._categorize(question, metrics)
+        if category is QueryCategory.ENROLLMENT_PLAN:
+            metrics = frozenset(
+                metric for metric in metrics if metric != "实际录取人数"
+            )
         requires_probability_model = (
             category is QueryCategory.ADMISSION_PROBABILITY
             and any(kw in question for kw in _EXACT_PROBABILITY_KEYWORDS)
@@ -221,6 +279,8 @@ class QueryClassifier:
     ) -> QueryCategory:
         text = question
 
+        if _looks_like_plan_change_question(text):
+            return QueryCategory.ENROLLMENT_PLAN
         if any(kw in text for kw in _TREND_KEYWORDS):
             return QueryCategory.TREND
         if any(kw in text for kw in _PROBABILITY_KEYWORDS):
@@ -234,6 +294,8 @@ class QueryClassifier:
 
         if any(kw in text for kw in _SELECTION_REQUIREMENT_KEYWORDS):
             return QueryCategory.SELECTION_REQ
+        if _looks_like_program_list_question(text):
+            return QueryCategory.ENROLLMENT_PLAN
         if any(kw in text for kw in _ENROLLMENT_KEYWORDS):
             return QueryCategory.ENROLLMENT_PLAN
         if any(kw in text for kw in _SPECIAL_KEYWORDS):

@@ -329,7 +329,7 @@ def test_query_route_rewrites_once_when_template_parse_returns_empty():
         sql="SELECT school_name FROM staging.program_catalog_records LIMIT 200",
         rows=[{"school_name": "贵州大学", "major_name": "数学类"}],
         row_count=1,
-        summary="当前 2026 招生专业目录查询共返回 1 条计划记录。",
+        summary="当前 2026 招生专业目录查询共匹配 1 条计划记录。",
         answer=None,
         exam_province="贵州",
         plan_year=2026,

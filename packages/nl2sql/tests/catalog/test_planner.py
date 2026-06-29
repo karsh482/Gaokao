@@ -231,6 +231,56 @@ def test_program_catalog_template_extracts_department_as_major_keyword() -> None
     assert "'数学'" in plan.sql
 
 
+def test_program_catalog_template_supports_school_program_list_question() -> None:
+    plan = _plan_2026("2026年贵州大学招收哪些专业")
+
+    assert plan is not None
+    assert plan.template_name == "program_catalog_lookup"
+    assert "FROM staging.program_catalog_records pc" in plan.sql
+    assert "pc.plan_year = 2026" in plan.sql
+    assert "pc.school_name ILIKE" in plan.sql
+    assert "'贵州大学'" in plan.sql
+    assert "pc.major_name ILIKE" not in plan.sql
+    assert "COUNT(*) OVER () AS matched_record_count" in plan.sql
+    assert "SUM(pc.enrollment_plan_count) OVER () AS matched_enrollment_plan_count" in plan.sql
+
+
+def test_program_plan_change_template_compares_2025_and_2026_by_major_subject() -> None:
+    plan = _plan_2026("贵州大学2026年法学专业招生人数是否有变化")
+
+    assert plan is not None
+    assert plan.template_name == "program_plan_change_lookup"
+    assert "FROM staging.admission_records" in plan.sql
+    assert "FROM staging.program_catalog_records" in plan.sql
+    assert "plan_year = 2025" in plan.sql
+    assert "plan_year = 2026" in plan.sql
+    assert "school_name ILIKE '%' || '贵州大学' || '%'" in plan.sql
+    assert "major_name ILIKE '%' || '法学' || '%'" in plan.sql
+    assert "FULL JOIN y2026 USING (school_name, major_name, subject_category)" in plan.sql
+    assert "plan_count_change" in plan.sql
+    assert plan.data_sources == (
+        "staging.admission_records",
+        "staging.program_catalog_records",
+    )
+
+
+def test_program_plan_change_template_supports_subject_filter() -> None:
+    plan = _plan_2026("贵州大学法学专业物理类2026比2025招生人数有变化吗")
+
+    assert plan is not None
+    assert plan.template_name == "program_plan_change_lookup"
+    assert "subject_category = '物理类'" in plan.sql
+
+
+def test_major_school_list_question_keeps_admission_major_filter() -> None:
+    plan = _plan("物理类 位次 30000 公办 学费 8000 以下的计算机专业有哪些学校")
+
+    assert plan is not None
+    assert plan.template_name == "multi_filter_lookup"
+    assert "ar.major_name ILIKE" in plan.sql
+    assert "'计算机'" in plan.sql
+
+
 def test_selection_requirement_template_requires_school_or_major() -> None:
     plan = _plan("计算机专业选科要求是什么")
 
