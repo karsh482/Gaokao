@@ -29,6 +29,9 @@ _DEPARTMENT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9]{1,30})系")
 _EXPLICIT_RANK_PATTERN = re.compile(r"(?:位次|排名|排位)\s*([0-9一二三四五六七八九十百千万,，]+)\s*(?:名|位)?")
 _BARE_RANK_PATTERN = re.compile(r"([0-9一二三四五六七八九十百千万,，]+)\s*(?:名|位)")
 _SCORE_PATTERN = re.compile(r"([0-9]{3})\s*分")
+_LEADING_TIME_PATTERN = re.compile(
+    r"^[\s，,、：:的]*(?:(?:20\d{2})年?|今年|本年|明年|去年)[\s，,、：:的]*"
+)
 _CITY_QUERY_PATTERN = re.compile(r"([\u4e00-\u9fa5]{2,8})(?:有哪些大学|有哪些院校|有哪些学校)")
 _CITY_TARGET_PATTERN = re.compile(
     r"(?:填报|报考|在|去|考虑)([\u4e00-\u9fa5]{2,8})(?:的哪些学校|的哪些院校|的哪些大学)"
@@ -131,6 +134,38 @@ _PLAN_CHANGE_KEYWORDS = (
     "多招",
     "少招",
 )
+_MAJOR_AFTER_SCHOOL_STOP_WORDS = (
+    "专业",
+    "今年",
+    "本年",
+    "明年",
+    "去年",
+    "2026",
+    "2025",
+    "招",
+    "招生",
+    "计划",
+    "人数",
+    "多少",
+    "几个",
+    "几人",
+    "几名",
+    "有没有",
+    "是否",
+    "变化",
+    "对比",
+    "比较",
+    "比",
+    "和",
+    "与",
+    "物理类",
+    "历史类",
+    "本科批",
+    "本科",
+    "专科",
+    "高职",
+    *_SPECIAL_PROGRAMS,
+)
 _RUSH_RANK_WINDOW = 5_000
 _SECURE_RANK_WINDOW = 8_000
 _SCORE_WINDOW = 20
@@ -211,6 +246,35 @@ def _extract_department_major(question: str) -> str | None:
     if not major or any(token in major for token in ("哪些", "什么", "院", "大学", "学院", "学校")):
         return None
     return major
+
+
+def _extract_major_after_school(question: str) -> str | None:
+    school = _extract_school(question)
+    if school is None or school not in question:
+        return None
+    target = question.split(school, 1)[1]
+    target = _LEADING_TIME_PATTERN.sub("", target)
+    target = target.strip(" ，,、：:的")
+    if not target:
+        return None
+
+    stop_positions = [
+        index
+        for keyword in _MAJOR_AFTER_SCHOOL_STOP_WORDS
+        if (index := target.find(keyword)) >= 0
+    ]
+    if stop_positions:
+        target = target[: min(stop_positions)]
+    target = target.strip(" ，,、：:的")
+    if not target:
+        return None
+    if len(target) > 30:
+        return None
+    if any(token in target for token in ("大学", "学院", "学校", "哪些", "什么", "多少")):
+        return None
+    if not re.search(r"[\u4e00-\u9fa5A-Za-z]", target):
+        return None
+    return target
 
 
 def _extract_rank(question: str) -> int | None:
@@ -331,10 +395,10 @@ def _extract_major_keyword(
     if department_major is not None:
         return department_major
     if not allow_generic_major:
-        return None
+        return _extract_major_after_school(question)
     major = _extract_major(question)
     if major is None:
-        return None
+        return _extract_major_after_school(question)
     if major in {"物理类", "历史类"}:
         return None
     return major
@@ -545,24 +609,24 @@ ORDER BY pc.school_name ASC, pc.major_name ASC, pc.source_page ASC
 WITH y2025 AS (
   SELECT
     school_name,
-    major_name,
+    TRIM(regexp_replace(major_name, '[（(].*?[）)]', '', 'g')) AS major_name,
     subject_category,
     SUM(enrollment_plan_count) AS plan_count_2025,
     COUNT(*) AS record_count_2025
   FROM staging.admission_records
   WHERE {" AND ".join(filters_2025)}
-  GROUP BY school_name, major_name, subject_category
+  GROUP BY school_name, TRIM(regexp_replace(major_name, '[（(].*?[）)]', '', 'g')), subject_category
 ),
 y2026 AS (
   SELECT
     school_name,
-    major_name,
+    TRIM(regexp_replace(major_name, '[（(].*?[）)]', '', 'g')) AS major_name,
     subject_category,
     SUM(enrollment_plan_count) AS plan_count_2026,
     COUNT(*) AS record_count_2026
   FROM staging.program_catalog_records
   WHERE {" AND ".join(filters_2026)}
-  GROUP BY school_name, major_name, subject_category
+  GROUP BY school_name, TRIM(regexp_replace(major_name, '[（(].*?[）)]', '', 'g')), subject_category
 )
 SELECT
   COALESCE(y2026.school_name, y2025.school_name) AS school_name,
@@ -580,7 +644,7 @@ SELECT
   END AS change_type,
   y2025.record_count_2025,
   y2026.record_count_2026,
-  '按院校、专业名称、科类聚合匹配；批次和招生类型未强制一致' AS comparison_note
+  '按院校、专业主名称、科类聚合匹配；专业名括号内专项/民族班等说明已合并，批次和招生类型未强制一致' AS comparison_note
 FROM y2025
 FULL JOIN y2026 USING (school_name, major_name, subject_category)
 ORDER BY

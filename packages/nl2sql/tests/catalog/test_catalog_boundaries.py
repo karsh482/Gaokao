@@ -556,7 +556,7 @@ def test_program_plan_change_query_summarizes_2025_2026_delta() -> None:
             "change_type": "增加",
             "record_count_2025": 1,
             "record_count_2026": 1,
-            "comparison_note": "按院校、专业名称、科类聚合匹配；批次和招生类型未强制一致",
+            "comparison_note": "按院校、专业主名称、科类聚合匹配；专业名括号内专项/民族班等说明已合并，批次和招生类型未强制一致",
         }
     ]
     pipeline, model, executor = _pipeline("SELECT 1", rows)
@@ -572,7 +572,7 @@ def test_program_plan_change_query_summarizes_2025_2026_delta() -> None:
     assert "2026 年计划 23 人" in result.summary
     assert "变化 +5 人" in result.summary
     assert "结论为“增加”" in result.summary
-    assert "批次和招生类型未强制一致" in result.summary
+    assert "专业名括号内专项/民族班等说明已合并" in result.summary
     assert model.calls == 0
     assert executor.executed_sql is not None
     assert "FROM staging.admission_records" in executor.executed_sql
@@ -581,6 +581,37 @@ def test_program_plan_change_query_summarizes_2025_2026_delta() -> None:
         "staging.admission_records",
         "staging.program_catalog_records",
     )
+
+
+def test_program_plan_change_query_keeps_current_year_when_question_mentions_2025_baseline() -> None:
+    rows = [
+        {
+            "school_name": "贵州民族大学",
+            "major_name": "机械电子工程",
+            "subject_category": "物理类",
+            "plan_count_2025": 144,
+            "plan_count_2026": 53,
+            "plan_count_change": -91,
+            "change_type": "减少",
+            "record_count_2025": 5,
+            "record_count_2026": 4,
+            "comparison_note": "按院校、专业主名称、科类聚合匹配；专业名括号内专项/民族班等说明已合并，批次和招生类型未强制一致",
+        }
+    ]
+    pipeline, _, executor = _pipeline("SELECT 1", rows)
+
+    result = pipeline.run(
+        "贵州民族大学机械电子工程今年招多少人，和2025年有没有变化？"
+    )
+
+    assert result.template_name == "program_plan_change_lookup"
+    assert result.plan_year == 2026
+    assert result.row_count == 1
+    assert "机械电子工程" in result.summary
+    assert "2025 年计划 144 人" in result.summary
+    assert "2026 年计划 53 人" in result.summary
+    assert executor.executed_sql is not None
+    assert "major_name ILIKE '%' || '机械电子工程' || '%'" in executor.executed_sql
 
 
 def test_program_catalog_query_infers_current_year_from_question() -> None:

@@ -221,6 +221,17 @@ def test_program_catalog_template_strips_colloquial_prefix_from_school_name() ->
     assert "'计算机'" in plan.sql
 
 
+def test_program_catalog_template_extracts_major_after_school_without_suffix() -> None:
+    plan = _plan_2026("贵州民族大学机械电子工程今年招多少人")
+
+    assert plan is not None
+    assert plan.template_name == "program_catalog_lookup"
+    assert "pc.school_name ILIKE" in plan.sql
+    assert "'贵州民族大学'" in plan.sql
+    assert "pc.major_name ILIKE" in plan.sql
+    assert "'机械电子工程'" in plan.sql
+
+
 def test_program_catalog_template_extracts_department_as_major_keyword() -> None:
     plan = _plan_2026("帮我看今年贵州大学数学系招几个")
 
@@ -256,6 +267,7 @@ def test_program_plan_change_template_compares_2025_and_2026_by_major_subject() 
     assert "plan_year = 2026" in plan.sql
     assert "school_name ILIKE '%' || '贵州大学' || '%'" in plan.sql
     assert "major_name ILIKE '%' || '法学' || '%'" in plan.sql
+    assert "TRIM(regexp_replace(major_name" in plan.sql
     assert "FULL JOIN y2026 USING (school_name, major_name, subject_category)" in plan.sql
     assert "plan_count_change" in plan.sql
     assert plan.data_sources == (
@@ -270,6 +282,16 @@ def test_program_plan_change_template_supports_subject_filter() -> None:
     assert plan is not None
     assert plan.template_name == "program_plan_change_lookup"
     assert "subject_category = '物理类'" in plan.sql
+
+
+def test_program_plan_change_template_extracts_major_without_suffix() -> None:
+    plan = _plan_2026("贵州民族大学机械电子工程今年招多少人，和2025年有没有变化？")
+
+    assert plan is not None
+    assert plan.template_name == "program_plan_change_lookup"
+    assert "school_name ILIKE '%' || '贵州民族大学' || '%'" in plan.sql
+    assert "major_name ILIKE '%' || '机械电子工程' || '%'" in plan.sql
+    assert "专业主名称" in plan.sql
 
 
 def test_major_school_list_question_keeps_admission_major_filter() -> None:

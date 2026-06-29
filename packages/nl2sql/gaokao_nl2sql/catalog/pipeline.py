@@ -101,10 +101,10 @@ class CatalogPipeline:
         assert self.planner is not None
         assert self.coverage_registry is not None
 
-        question_plan_year = _extract_explicit_year(question)
+        classified = self.classifier.classify(question)
+        question_plan_year = _resolve_question_plan_year(question, classified)
         resolved_plan_year = question_plan_year if question_plan_year is not None else plan_year
         scope = self.scope_resolver.resolve(exam_province, resolved_plan_year)
-        classified = self.classifier.classify(question)
         if (
             classified.category is QueryCategory.ENROLLMENT_PLAN
             and question_plan_year is None
@@ -397,6 +397,57 @@ def _extract_explicit_year(question: str) -> int | None:
             return date.today().year - 1
         return None
     return int(match.group(1))
+
+
+def _resolve_question_plan_year(question: str, classified: ClassifiedQuery) -> int | None:
+    if _is_plan_change_question(question, classified):
+        if "2026" in question or "今年" in question or "本年" in question:
+            return 2026
+        return None
+    return _extract_explicit_year(question)
+
+
+def _is_plan_change_question(question: str, classified: ClassifiedQuery) -> bool:
+    if classified.category is not QueryCategory.ENROLLMENT_PLAN:
+        return False
+    has_change_signal = any(
+        keyword in question
+        for keyword in (
+            "是否有变化",
+            "有没有变化",
+            "有变化吗",
+            "变化",
+            "变了吗",
+            "对比",
+            "比较",
+            "比去年",
+            "比2025",
+            "比 2025",
+            "增加",
+            "减少",
+            "多招",
+            "少招",
+        )
+    )
+    has_plan_signal = any(
+        keyword in question
+        for keyword in (
+            "招生计划",
+            "计划人数",
+            "招多少",
+            "招几人",
+            "招几个人",
+            "招几个",
+            "招几名",
+            "计划招生",
+            "招生名额",
+            "招生人数",
+            "招收人数",
+            "招聘人数",
+            "专业",
+        )
+    )
+    return has_change_signal and has_plan_signal
 
 
 def _default_plan_catalog_year(data_scope: DataScope) -> int | None:
